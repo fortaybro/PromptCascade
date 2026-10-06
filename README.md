@@ -2,7 +2,12 @@
 
 A keyboard-first Android home screen. Type what you want, press Enter, and it happens. Built for phones with a physical keyboard, developed on the Unihertz Titan 2 Elite.
 
-> **Status:** 2.0, the Daylight redesign. Sideloaded release (not on Google Play). Expect rough edges and please report them with the `bug` command.
+> **Status:** 2.1. Sideloaded release (not on Google Play). Expect rough edges and please report them with the `bug` command.
+
+## What's new in 2.1
+
+- **Calendar without Google:** Prompt now uses the calendars already on your phone (Samsung, Outlook, Proton, local, or a synced Google account). No sign-in needed. A direct Google Calendar connection is still there in `calendarsetup` if you want it.
+- **Calendar setup fixed:** the setup card can always be closed (Close, Back or Esc), even when no calendars are found. It's also smaller, so the camera no longer covers it.
 
 ## What's new in 2.0
 
@@ -50,7 +55,7 @@ Everything works without a Google account. Calendar uses your phone's own calend
 
 ## Install
 
-Download the APK from [Releases](https://github.com/fortaybro/PromptLauncher/releases) and install it. 2.0 installs as an update over 1.x. Then choose Prompt Launcher as your Home app.
+Download the APK from [Releases](https://github.com/fortaybro/PromptLauncher/releases) and install it. It installs as an update over 1.x or 2.0. Then choose Prompt Launcher as your Home app.
 
 Sideloaded apps may need **Allow restricted settings** (app info → ⋮) before Android lets you grant SMS or notification access.
 
