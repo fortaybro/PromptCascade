@@ -249,6 +249,13 @@ fun TitanHomeScreen(
     currentCalendarId: String?,
     onSaveCalendarSelection: (GoogleCalendarOption) -> Unit,
     onDismissCalendarSetup: () -> Unit,
+    /*
+     * Calendar setup: showing phone calendars or Google, still
+     * loading, and switching between the two.
+     */
+    calendarSetupUsesGoogle: Boolean = false,
+    calendarSetupLoading: Boolean = false,
+    onCalendarSetupSource: (Boolean) -> Unit = {},
     onCalendarStatus: () -> Unit,
     onCreateNote: (String, NoteCategory) -> Unit,
     onOpenNotes: () -> Unit,
@@ -7693,7 +7700,7 @@ fun TitanHomeScreen(
                         .fillMaxSize()
                         .background(
                             Color.Black.copy(
-                                alpha = 0.18f
+                                alpha = 0.30f
                             )
                         )
                         .pointerInput(Unit) {
@@ -7712,7 +7719,13 @@ fun TitanHomeScreen(
                     onSave =
                         onSaveCalendarSelection,
                     onDismiss =
-                        onDismissCalendarSetup
+                        onDismissCalendarSetup,
+                    usesGoogle =
+                        calendarSetupUsesGoogle,
+                    loading =
+                        calendarSetupLoading,
+                    onChooseSource =
+                        onCalendarSetupSource
                 )
             }
         }

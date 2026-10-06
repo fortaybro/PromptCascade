@@ -201,12 +201,28 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+/*
+ * CALENDAR SETUP (Daylight)
+ *
+ * Picks where ":" events go and which calendar the home card follows.
+ * Two sources:
+ *  - Phone calendars: whatever calendars are on the phone (Samsung,
+ *    Outlook, Proton, local, and synced Google accounts too). No Google
+ *    sign-in. The default.
+ *  - Google account: the original Google Calendar connection.
+ *
+ * Always closable: Close, Back, Esc or a tap outside, even when no
+ * calendars were found.
+ */
 @Composable
 internal fun CalendarSetupOverlayCard(
     calendars: List<GoogleCalendarOption>,
     currentDefaultId: String?,
     onSave: (GoogleCalendarOption) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    usesGoogle: Boolean = false,
+    loading: Boolean = false,
+    onChooseSource: (Boolean) -> Unit = {}
 ) {
 
     val focusRequester =
@@ -244,52 +260,28 @@ internal fun CalendarSetupOverlayCard(
         currentDefaultId
     ) {
 
-        val startingIndex =
+        highlightedIndex =
             calendars
                 .indexOfFirst {
-                    it.id ==
-                            selectedCalendar
-                                ?.id
+                    it.id == selectedCalendar?.id
                 }
+                .coerceAtLeast(0)
 
-        highlightedIndex =
-            if (
-                startingIndex >=
-                0
-            ) {
-                startingIndex
-            } else {
-                0
-            }
-
-        focusRequester
-            .requestFocus()
+        runCatching {
+            focusRequester.requestFocus()
+        }
     }
 
     LaunchedEffect(
         highlightedIndex,
         calendars.size
     ) {
-
         if (
             calendars.isNotEmpty()
         ) {
-
-            highlightedIndex =
-                highlightedIndex
-                    .coerceIn(
-                        0,
-                        calendars.lastIndex
-                    )
-
-            listState
-                .animateScrollToItem(
-                    highlightedIndex
-                )
-        } else {
-
-            highlightedIndex =
-                0
+            listState.animateScrollToItem(
+                highlightedIndex.coerceIn(0, calendars.lastIndex)
+            )
         }
     }
 
@@ -300,104 +292,71 @@ internal fun CalendarSetupOverlayCard(
     Column(
         modifier =
             Modifier
-                .widthIn(
-                    max =
-                        270.dp
+                /*
+                 * Kept clear of the top-left camera: room above, and
+                 * a little narrower and shorter than before.
+                 */
+                .padding(
+                    start = 24.dp,
+                    end = 24.dp,
+                    top = 52.dp,
+                    bottom = 16.dp
                 )
-                .heightIn(
-                    min =
-                        220.dp,
-                    max =
-                        330.dp
-                )
+                .widthIn(max = 296.dp)
+                .fillMaxWidth()
+                .heightIn(max = 400.dp)
                 .background(
                     SurfaceBlack,
-                    RoundedCornerShape(
-                        14.dp
-                    )
-                )
-                .border(
-                    0.8.dp,
-                    BorderGray,
-                    RoundedCornerShape(
-                        14.dp
-                    )
+                    RoundedCornerShape(18.dp)
                 )
                 .pointerInput(Unit) {
                     detectTapGestures {
-                        /*
-                         * Consume taps inside the card so only
-                         * taps outside the card dismiss it.
-                         */
+                        // Taps inside the card stay inside it.
                     }
                 }
-                .focusRequester(
-                    focusRequester
-                )
+                .focusRequester(focusRequester)
                 .focusable()
-                .onPreviewKeyEvent {
-                        event ->
+                .onPreviewKeyEvent { event ->
 
                     if (
-                        event.type !=
-                        KeyEventType.KeyDown
+                        event.type != KeyEventType.KeyDown
                     ) {
-
                         false
-
                     } else {
-
-                        when (
-                            event.key
-                        ) {
+                        when (event.key) {
 
                             Key.DirectionDown -> {
-
-                                if (
-                                    calendars.isNotEmpty()
-                                ) {
-
+                                if (calendars.isNotEmpty()) {
                                     highlightedIndex =
-                                        (
-                                                highlightedIndex + 1
-                                                )
-                                            .coerceAtMost(
-                                                calendars.lastIndex
-                                            )
+                                        (highlightedIndex + 1)
+                                            .coerceAtMost(calendars.lastIndex)
                                 }
-
                                 true
                             }
 
                             Key.DirectionUp -> {
-
                                 highlightedIndex =
-                                    (
-                                            highlightedIndex - 1
-                                            )
-                                        .coerceAtLeast(
-                                            0
-                                        )
-
+                                    (highlightedIndex - 1).coerceAtLeast(0)
                                 true
                             }
 
                             Key.Enter -> {
+                                val highlighted =
+                                    calendars.getOrNull(highlightedIndex)
 
-                                calendars
-                                    .getOrNull(
-                                        highlightedIndex
-                                    )
-                                    ?.let {
-                                        selectedCalendar =
-                                            it
-                                    }
-
+                                if (
+                                    highlighted != null &&
+                                    highlighted.id == selectedCalendar?.id
+                                ) {
+                                    onSave(highlighted)
+                                } else if (highlighted != null) {
+                                    selectedCalendar = highlighted
+                                }
                                 true
                             }
 
-                            Key.Escape -> {
-
+                            Key.Escape,
+                            Key.Back -> {
                                 onDismiss()
                                 true
                             }
@@ -407,199 +366,150 @@ internal fun CalendarSetupOverlayCard(
                         }
                     }
                 }
-                .padding(
-                    horizontal =
-                        12.dp,
-                    vertical =
-                        10.dp
-                )
+                .padding(16.dp)
     ) {
 
         Text(
-            text =
-                "calendar setup",
-            color =
-                PrimaryText,
-            fontSize =
-                14.sp,
-            fontFamily =
-                InterfaceFont,
-            fontWeight =
-                FontWeight.Medium
+            text = "Calendar",
+            color = PrimaryText,
+            fontSize = 18.sp,
+            lineHeight = 20.sp,
+            letterSpacing = (-0.4).sp,
+            fontFamily = InterfaceFont,
+            fontWeight = FontWeight.Bold
         )
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    8.dp
-                )
+        Spacer(Modifier.height(2.dp))
+
+        Text(
+            text = "Where new events go and what home shows.",
+            color = SecondaryText,
+            fontSize = 9.5.sp,
+            lineHeight = 12.sp,
+            fontFamily = InterfaceFont
         )
 
-        if (
-            calendars.isEmpty()
-        ) {
+        Spacer(Modifier.height(12.dp))
 
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(
-                            1f
-                        ),
-                contentAlignment =
-                    Alignment.Center
-            ) {
-
-                Text(
-                    text =
-                        "no writable calendars found",
-                    color =
-                        TertiaryText,
-                    fontSize =
-                        8.sp,
-                    fontFamily =
-                        InterfaceFont
-                )
+        DaylightSegmented(
+            options = listOf("Phone calendars", "Google account"),
+            selectedIndex = if (usesGoogle) 1 else 0,
+            onSelect = { index ->
+                onChooseSource(index == 1)
             }
-
-        } else {
-
-            LazyColumn(
-                state =
-                    listState,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(
-                            1f
-                        ),
-                verticalArrangement =
-                    Arrangement.spacedBy(
-                        4.dp
-                    )
-            ) {
-
-                itemsIndexed(
-                    items =
-                        calendars,
-                    key = {
-                            _,
-                            calendar ->
-
-                        calendar.id
-                    }
-                ) {
-                        index,
-                        calendar ->
-
-                    CalendarSetupOverlayRow(
-                        calendar =
-                            calendar,
-                        selected =
-                            selectedCalendar
-                                ?.id ==
-                                    calendar.id,
-                        highlighted =
-                            index ==
-                                    highlightedIndex,
-                        onClick = {
-
-                            highlightedIndex =
-                                index
-
-                            selectedCalendar =
-                                calendar
-                        }
-                    )
-                }
-            }
-        }
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    8.dp
-                )
         )
+
+        Spacer(Modifier.height(10.dp))
 
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(
-                        32.dp
-                    )
-                    .background(
-                        color =
-                            if (
-                                selectedCalendar !=
-                                null
-                            ) {
-                                AccentOrange
-                            } else {
-                                InputSurface
-                            },
-                        shape =
-                            RoundedCornerShape(
-                                8.dp
-                            )
-                    )
-                    .border(
-                        width =
-                            0.75.dp,
-                        color =
-                            if (
-                                selectedCalendar !=
-                                null
-                            ) {
-                                AccentOrange
-                            } else {
-                                BorderGray
-                            },
-                        shape =
-                            RoundedCornerShape(
-                                8.dp
-                            )
-                    )
-                    .clickable(
-                        enabled =
-                            selectedCalendar !=
-                                    null
-                    ) {
-
-                        selectedCalendar
-                            ?.let(
-                                onSave
-                            )
-                    },
-            contentAlignment =
-                Alignment.Center
+                    .weight(1f, fill = false)
+                    .heightIn(min = 90.dp)
         ) {
 
-            Text(
-                text =
-                    "DONE",
-                color =
-                    if (
-                        selectedCalendar !=
-                        null
+            when {
+                loading -> {
+                    Text(
+                        text =
+                            if (usesGoogle) "Connecting to Google…"
+                            else "Looking for calendars on this phone…",
+                        color = SecondaryText,
+                        fontSize = 10.sp,
+                        fontFamily = InterfaceFont,
+                        textAlign = TextAlign.Center,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 30.dp)
+                    )
+                }
+
+                calendars.isEmpty() -> {
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (
-                            settingsChoiceTextNeedsDarkAccent()
-                        ) {
-                            BackgroundBlack
-                        } else {
-                            Color.White
+                        Text(
+                            text = "No calendars found",
+                            color = PrimaryText,
+                            fontSize = 11.sp,
+                            fontFamily = InterfaceFont,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Spacer(Modifier.height(4.dp))
+
+                        Text(
+                            text =
+                                if (usesGoogle) {
+                                    "Google didn't return any calendars you can add events to. Try Phone calendars instead."
+                                } else {
+                                    "Allow calendar access, or add an account in your phone's calendar app. Prompt Launcher works fine without a calendar."
+                                },
+                            color = SecondaryText,
+                            fontSize = 9.sp,
+                            lineHeight = 11.5.sp,
+                            fontFamily = InterfaceFont,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                else -> {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        itemsIndexed(
+                            items = calendars,
+                            key = { _, calendar -> calendar.id }
+                        ) { index, calendar ->
+
+                            CalendarSetupOverlayRow(
+                                calendar = calendar,
+                                selected = selectedCalendar?.id == calendar.id,
+                                highlighted = index == highlightedIndex,
+                                onClick = {
+                                    highlightedIndex = index
+                                    selectedCalendar = calendar
+                                }
+                            )
                         }
-                    } else {
-                        TertiaryText
-                    },
-                fontSize =
-                    9.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Bold
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+
+            DaylightSecondaryButton(
+                label = "Close",
+                modifier = Modifier.weight(1f),
+                onClick = onDismiss
+            )
+
+            val pick =
+                selectedCalendar
+                    ?.takeIf { picked -> calendars.any { it.id == picked.id } }
+
+            DaylightPrimaryButton(
+                label = "Save",
+                modifier = Modifier.weight(1f),
+                enabled = pick != null && !loading,
+                onClick = {
+                    pick?.let(onSave)
+                }
             )
         }
     }
@@ -613,129 +523,72 @@ internal fun CalendarSetupOverlayRow(
     onClick: () -> Unit
 ) {
 
-    Box(
+    Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(
-                    42.dp
-                )
+                .heightIn(min = 42.dp)
                 .background(
-                    color =
-                        if (
-                            selected
-                        ) {
-                            AccentOrange.copy(
-                                alpha =
-                                    0.12f
-                            )
-                        } else if (
-                            highlighted
-                        ) {
-                            InputSurface
-                        } else {
-                            BackgroundBlack
-                        },
-                    shape =
-                        RoundedCornerShape(
-                            8.dp
-                        )
+                    when {
+                        selected -> AccentOrange.copy(alpha = 0.12f)
+                        highlighted -> BackgroundBlack
+                        else -> Color.Transparent
+                    },
+                    RoundedCornerShape(11.dp)
                 )
                 .border(
-                    width =
-                        if (
-                            selected
-                        ) {
-                            1.dp
-                        } else {
-                            0.75.dp
-                        },
-                    color =
-                        if (
-                            selected
-                        ) {
-                            AccentOrange
-                        } else {
-                            BorderGray
-                        },
-                    shape =
-                        RoundedCornerShape(
-                            8.dp
-                        )
+                    width = if (selected) 1.2.dp else 0.dp,
+                    color = if (selected) AccentOrange else Color.Transparent,
+                    shape = RoundedCornerShape(11.dp)
                 )
-                .clickable {
-
-                    onClick()
-                }
-                .padding(
-                    horizontal =
-                        10.dp
-                ),
-        contentAlignment =
-            Alignment.CenterStart
+                .clickable { onClick() }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
 
-        Row(
-            verticalAlignment =
-                Alignment.CenterVertically
+        Box(
+            modifier =
+                Modifier
+                    .size(16.dp)
+                    .border(
+                        1.5.dp,
+                        if (selected) AccentOrange else BorderGray,
+                        CircleShape
+                    ),
+            contentAlignment = Alignment.Center
         ) {
+            if (selected) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(8.dp)
+                            .background(AccentOrange, CircleShape)
+                )
+            }
+        }
 
+        Spacer(Modifier.width(10.dp))
+
+        Text(
+            text = calendar.summary,
+            color = if (selected) AccentOrange else PrimaryText,
+            fontSize = 10.5.sp,
+            lineHeight = 13.sp,
+            fontFamily = InterfaceFont,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+
+        if (calendar.primary) {
+            Spacer(Modifier.width(6.dp))
             Text(
-                text =
-                    if (
-                        selected
-                    ) {
-                        ">"
-                    } else {
-                        " "
-                    },
-                color =
-                    AccentOrange,
-                fontSize =
-                    10.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.width(
-                        7.dp
-                    )
-            )
-
-            Text(
-                text =
-                    calendar.summary
-                        .lowercase(),
-                color =
-                    if (
-                        selected
-                    ) {
-                        AccentOrange
-                    } else {
-                        PrimaryText
-                    },
-                fontSize =
-                    9.5.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    if (
-                        selected
-                    ) {
-                        FontWeight.Bold
-                    } else {
-                        FontWeight.Normal
-                    },
-                maxLines =
-                    1,
-                overflow =
-                    TextOverflow.Ellipsis
+                text = "main",
+                color = SecondaryText,
+                fontSize = 8.sp,
+                fontFamily = InterfaceFont
             )
         }
     }
 }
-

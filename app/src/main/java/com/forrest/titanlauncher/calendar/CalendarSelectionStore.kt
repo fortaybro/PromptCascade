@@ -95,6 +95,37 @@ class CalendarSelectionStore(
                     .isNullOrBlank()
     }
 
+    /*
+     * Where events come from and go to: the phone's own calendars
+     * (no Google sign-in) or a Google account. Before anything is
+     * chosen: Google only if a Google calendar was already picked
+     * (people upgrading), otherwise the phone.
+     */
+    fun usesGoogle(): Boolean {
+
+        preferences
+            .getString(KEY_SOURCE, null)
+            ?.let { return it == SOURCE_GOOGLE }
+
+        val picked =
+            getPersonalCalendarId()
+
+        return picked != null &&
+                !DeviceCalendarRepository.isDeviceId(picked)
+    }
+
+    fun setUsesGoogle(
+        google: Boolean
+    ) {
+        preferences
+            .edit()
+            .putString(
+                KEY_SOURCE,
+                if (google) SOURCE_GOOGLE else SOURCE_PHONE
+            )
+            .apply()
+    }
+
     fun clear() {
 
         preferences
@@ -116,5 +147,14 @@ class CalendarSelectionStore(
 
         private const val KEY_FAMILY_NAME =
             "family_calendar_name"
+
+        private const val KEY_SOURCE =
+            "calendar_source"
+
+        private const val SOURCE_GOOGLE =
+            "google"
+
+        private const val SOURCE_PHONE =
+            "phone"
     }
 }

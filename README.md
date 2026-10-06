@@ -44,6 +44,10 @@ Anything else is a search, sent to Chrome, Claude or your apps (pick with the ch
 
 **Other phones:** anything that can launch an app (a shortcut button, a gesture app) can open it. Launching Prompt Launcher as an app, rather than as Home, opens the prompt over what you're doing.
 
+## No Google needed
+
+Everything works without a Google account. Calendar uses your phone's own calendars, mail comes from your mail app's notifications, to-dos can go to Todoist, and the search chips can be switched off or set to Claude or Apps. Gmail, Google Calendar and Google Tasks connections are optional extras.
+
 ## Install
 
 Download the APK from [Releases](https://github.com/fortaybro/PromptLauncher/releases) and install it. 2.0 installs as an update over 1.x. Then choose Prompt Launcher as your Home app.
@@ -56,7 +60,8 @@ All optional; each feature asks when you first use it.
 
 - **Contacts, SMS (send/read):** texting from the prompt, and quick reply's conversation history.
 - **Notification access:** the hub, quick reply and new-text alerts.
-- **Calendar, usage access, location (coarse):** next event, the 24-hour ring, weather.
+- **Calendar:** your next event on home, and adding events with `:`. Uses the calendars already on your phone (Samsung, Outlook, Proton, local, or a synced Google account), so no Google sign-in is needed. You can switch to a direct Google Calendar connection with `calendarsetup`.
+- **Usage access, location (coarse):** the 24-hour ring and weather.
 - **Phone / call log:** calls from the prompt and the hub.
 
 ## Privacy
@@ -64,7 +69,7 @@ All optional; each feature asks when you first use it.
 No server, no analytics, no ads, no tracking. Everything stays on your phone except requests you set up yourself:
 
 - Weather: approximate location to [Open-Meteo](https://open-meteo.com).
-- Your own Google account (Gmail, Calendar, Tasks) after you sign in, and Todoist with your token.
+- Your own Google account (Gmail, Google Calendar, Google Tasks) only if you choose to sign in, and Todoist with your token.
 - Assist sends your question to Google Gemini with **your own** API key. Mail, calendar and texts are only included if you switch them on in `geminisetup`, which lists exactly what each switch sends.
 
 ## Build it yourself

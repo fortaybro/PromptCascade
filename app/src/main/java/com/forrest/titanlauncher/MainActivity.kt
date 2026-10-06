@@ -149,6 +149,7 @@ import com.forrest.titanlauncher.calendar.CalendarAssistCalendar
 import com.forrest.titanlauncher.calendar.CalendarAssistRepository
 import com.forrest.titanlauncher.calendar.CalendarVisibilityStore
 import com.forrest.titanlauncher.calendar.CalendarSelectionStore
+import com.forrest.titanlauncher.calendar.DeviceCalendarRepository
 import com.forrest.titanlauncher.calendar.CalendarTarget
 import com.forrest.titanlauncher.calendar.GoogleCalendarAuthManager
 import com.forrest.titanlauncher.calendar.GoogleCalendarOption
@@ -1706,6 +1707,31 @@ fun TitanApp(
         )
     }
 
+    /*
+     * Which source the calendar setup card is showing: the phone's
+     * own calendars (no Google needed) or a Google account.
+     */
+    var calendarSetupUsesGoogle by remember {
+        mutableStateOf(false)
+    }
+
+    var calendarSetupLoading by remember {
+        mutableStateOf(false)
+    }
+
+    /*
+     * Waiting on a calendar permission: open the phone calendar list
+     * once read access is granted, or add this event once write
+     * access is.
+     */
+    var pendingPhoneCalendarSetup by remember {
+        mutableStateOf(false)
+    }
+
+    var pendingPhoneCalendarDraft by remember {
+        mutableStateOf<CalendarEventDraft?>(null)
+    }
+
     var calendarVisibilityOptions by remember {
         mutableStateOf(
             emptyList<CalendarAssistCalendar>()
@@ -2023,7 +2049,129 @@ fun TitanApp(
 
             hasCalendarPermission =
                 granted
+
+            if (
+                pendingPhoneCalendarSetup
+            ) {
+                pendingPhoneCalendarSetup =
+                    false
+
+                if (granted) {
+                    scope.launch {
+                        calendarSetupOptions =
+                            DeviceCalendarRepository
+                                .loadWritableCalendars(context)
+                        calendarSetupLoading =
+                            false
+                    }
+                } else {
+                    calendarSetupLoading =
+                        false
+                }
+            }
         }
+
+    /*
+     * Adding events to a phone calendar needs write access, asked the
+     * first time it's needed.
+     */
+    val calendarWritePermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract =
+                ActivityResultContracts.RequestPermission()
+        ) { granted ->
+
+            val draft =
+                pendingPhoneCalendarDraft
+
+            pendingPhoneCalendarDraft =
+                null
+
+            if (
+                !granted
+            ) {
+                statusText =
+                    "CALENDAR ACCESS DENIED"
+                return@rememberLauncherForActivityResult
+            }
+
+            if (
+                draft != null
+            ) {
+                val calendarId =
+                    when (draft.target) {
+                        CalendarTarget.PERSONAL -> calendarSelectionStore.getPersonalCalendarId()
+                        CalendarTarget.FAMILY -> calendarSelectionStore.getFamilyCalendarId()
+                    }
+
+                if (calendarId != null) {
+                    scope.launch {
+                        val result =
+                            DeviceCalendarRepository.createEvent(
+                                context,
+                                calendarId,
+                                draft
+                            )
+                        statusText =
+                            result.message
+                    }
+                }
+            }
+        }
+
+    /*
+     * Opens calendar setup on the phone's own calendars.
+     */
+    fun openPhoneCalendarSetup() {
+
+        calendarSetupUsesGoogle =
+            false
+
+        calendarSetupOptions =
+            emptyList()
+
+        showMessagesInbox =
+            false
+
+        currentConversation =
+            null
+
+        showNotes =
+            false
+
+        currentNote =
+            null
+
+        showCalendarSetup =
+            true
+
+        if (
+            !DeviceCalendarRepository.canRead(context)
+        ) {
+            calendarSetupLoading =
+                true
+
+            pendingPhoneCalendarSetup =
+                true
+
+            calendarPermissionLauncher.launch(
+                Manifest.permission.READ_CALENDAR
+            )
+
+            return
+        }
+
+        calendarSetupLoading =
+            true
+
+        scope.launch {
+            calendarSetupOptions =
+                DeviceCalendarRepository
+                    .loadWritableCalendars(context)
+            calendarSetupLoading =
+                false
+        }
+    }
 
     /*
      * From Android 13 the launcher must hold POST_NOTIFICATIONS to
@@ -2135,6 +2283,62 @@ fun TitanApp(
     }
 
     fun refreshPersonalUpcomingEvent() {
+
+        /*
+         * Phone calendars: read straight from the phone, no Google.
+         */
+        if (
+            !calendarSelectionStore.usesGoogle()
+        ) {
+            scope.launch {
+
+                val snapshot =
+                    DeviceCalendarRepository.loadSnapshot(
+                        context = context,
+                        agendaDays = com.forrest.titanlauncher.ai.AssistantPayloadLimits.AGENDA_DAYS.toLong(),
+                        nextEventDays = 30
+                    )
+
+                val homeCalendarId =
+                    calendarSelectionStore
+                        .getPersonalCalendarId()
+                        ?.takeIf { DeviceCalendarRepository.isDeviceId(it) }
+
+                val nextTimedEvent =
+                    if (homeCalendarId != null) {
+                        DeviceCalendarRepository.loadSnapshot(
+                            context = context,
+                            agendaDays = 1,
+                            nextEventDays = 30,
+                            onlyCalendarId = homeCalendarId
+                        ).nextEvent
+                    } else {
+                        snapshot.nextEvent
+                    }
+
+                upcomingEvent =
+                    nextTimedEvent?.let { event ->
+                        UpcomingCalendarEvent(
+                            title = event.title,
+                            startTime = event.startTime,
+                            allDay = event.allDay,
+                            location = event.location
+                        )
+                    }
+
+                calendarAgendaEvents =
+                    snapshot.agendaEvents.map { event ->
+                        UpcomingCalendarEvent(
+                            title = event.title,
+                            startTime = event.startTime,
+                            allDay = event.allDay,
+                            location = event.location
+                        )
+                    }
+            }
+
+            return
+        }
 
         /*
          * Despite the historical function name, this is now the
@@ -2353,6 +2557,12 @@ fun TitanApp(
                 calendarSetupOptions =
                     result.calendars
 
+                calendarSetupUsesGoogle =
+                    true
+
+                calendarSetupLoading =
+                    false
+
                 showMessagesInbox =
                     false
 
@@ -2372,6 +2582,9 @@ fun TitanApp(
                     ""
 
             } else {
+
+                calendarSetupLoading =
+                    false
 
                 statusText =
                     result.message
@@ -2499,6 +2712,9 @@ fun TitanApp(
             calendarVisibilityLoading =
                 false
 
+            calendarSetupLoading =
+                false
+
             statusText =
                 if (
                     result.resultCode ==
@@ -2600,6 +2816,9 @@ fun TitanApp(
                         calendarVisibilityLoading =
                             false
 
+                        calendarSetupLoading =
+                            false
+
                         statusText =
                             "GOOGLE AUTH FAILED"
                     }
@@ -2614,6 +2833,9 @@ fun TitanApp(
                         null
 
                     calendarVisibilityLoading =
+                        false
+
+                    calendarSetupLoading =
                         false
 
                     statusText =
@@ -3349,7 +3571,58 @@ fun TitanApp(
             onCreateCalendarEvent = {
                     draft ->
 
+                val phoneCalendarId =
+                    when (draft.target) {
+                        CalendarTarget.PERSONAL -> calendarSelectionStore.getPersonalCalendarId()
+                        CalendarTarget.FAMILY -> calendarSelectionStore.getFamilyCalendarId()
+                    }
+
                 if (
+                    !calendarSelectionStore.usesGoogle()
+                ) {
+
+                    /*
+                     * Phone calendars: add it directly, asking for
+                     * write access or a calendar first if needed.
+                     */
+                    if (
+                        phoneCalendarId == null ||
+                        !DeviceCalendarRepository.isDeviceId(phoneCalendarId)
+                    ) {
+                        statusText =
+                            "PICK A CALENDAR FIRST"
+
+                        openPhoneCalendarSetup()
+
+                    } else if (
+                        !DeviceCalendarRepository.canWrite(context)
+                    ) {
+                        pendingPhoneCalendarDraft =
+                            draft
+
+                        calendarWritePermissionLauncher.launch(
+                            Manifest.permission.WRITE_CALENDAR
+                        )
+
+                    } else {
+                        scope.launch {
+                            val result =
+                                DeviceCalendarRepository.createEvent(
+                                    context,
+                                    phoneCalendarId,
+                                    draft
+                                )
+
+                            statusText =
+                                result.message
+
+                            if (result.success) {
+                                refreshPersonalUpcomingEvent()
+                            }
+                        }
+                    }
+
+                } else if (
                     !calendarSelectionStore
                         .isConfigured()
                 ) {
@@ -3369,10 +3642,43 @@ fun TitanApp(
             },
             onCalendarSetup = {
 
-                requestGoogleAuthorization(
-                    action =
-                        GoogleCalendarAction.LOAD_SETUP
-                )
+                if (
+                    calendarSelectionStore.usesGoogle()
+                ) {
+                    calendarSetupUsesGoogle =
+                        true
+
+                    requestGoogleAuthorization(
+                        action =
+                            GoogleCalendarAction.LOAD_SETUP
+                    )
+                } else {
+                    openPhoneCalendarSetup()
+                }
+            },
+            calendarSetupUsesGoogle =
+                calendarSetupUsesGoogle,
+            calendarSetupLoading =
+                calendarSetupLoading,
+            onCalendarSetupSource = { google ->
+
+                if (google) {
+                    calendarSetupUsesGoogle =
+                        true
+
+                    calendarSetupOptions =
+                        emptyList()
+
+                    calendarSetupLoading =
+                        true
+
+                    requestGoogleAuthorization(
+                        action =
+                            GoogleCalendarAction.LOAD_SETUP
+                    )
+                } else {
+                    openPhoneCalendarSetup()
+                }
             },
             showCalendarSetup =
                 showCalendarSetup,
@@ -3415,6 +3721,23 @@ fun TitanApp(
                             }
                         ?: selected
 
+                val pickedPhone =
+                    DeviceCalendarRepository.isDeviceId(selected.id)
+
+                calendarSelectionStore
+                    .setUsesGoogle(
+                        !pickedPhone
+                    )
+
+                if (
+                    pickedPhone &&
+                    !DeviceCalendarRepository.canWrite(context)
+                ) {
+                    calendarWritePermissionLauncher.launch(
+                        Manifest.permission.WRITE_CALENDAR
+                    )
+                }
+
                 calendarSelectionStore
                     .saveSelections(
                         personalCalendarId =
@@ -3438,6 +3761,9 @@ fun TitanApp(
             onDismissCalendarSetup = {
 
                 showCalendarSetup =
+                    false
+
+                calendarSetupLoading =
                     false
 
                 statusText =
@@ -5431,6 +5757,19 @@ fun TitanApp(
                                                 launcherSettingsPage = LauncherSettingsPage.HOME_SCREEN
                                             },
                                             onCalendars = {
+                                                /*
+                                                 * Phone calendars have nothing to sign in to: open the
+                                                 * calendar card (with its Phone / Google switch) instead.
+                                                 */
+                                                if (
+                                                    !calendarSelectionStore.usesGoogle()
+                                                ) {
+                                                    showSettings =
+                                                        false
+
+                                                    openPhoneCalendarSetup()
+                                                } else {
+
 
                                                 launcherSettingsPage =
                                                     LauncherSettingsPage.CALENDARS
@@ -5442,6 +5781,7 @@ fun TitanApp(
                                                     action =
                                                         GoogleCalendarAction.LOAD_VISIBILITY
                                                 )
+                                                }
                                             },
                                             onProductivityBar = {
                                                 launcherSettingsPage = LauncherSettingsPage.PRODUCTIVITY_BAR
@@ -5604,6 +5944,19 @@ fun TitanApp(
                                         launcherSettingsPage = LauncherSettingsPage.HOME_SCREEN
                                     },
                                     onCalendars = {
+                                        /*
+                                         * Phone calendars have nothing to sign in to: open the
+                                         * calendar card (with its Phone / Google switch) instead.
+                                         */
+                                        if (
+                                            !calendarSelectionStore.usesGoogle()
+                                        ) {
+                                            showSettings =
+                                                false
+
+                                            openPhoneCalendarSetup()
+                                        } else {
+
 
                                         launcherSettingsPage =
                                             LauncherSettingsPage.CALENDARS
@@ -5615,6 +5968,7 @@ fun TitanApp(
                                             action =
                                                 GoogleCalendarAction.LOAD_VISIBILITY
                                         )
+                                        }
                                     },
                                     onProductivityBar = {
                                         launcherSettingsPage = LauncherSettingsPage.PRODUCTIVITY_BAR
