@@ -6,6 +6,7 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -15,6 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,20 +29,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,14 +49,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -104,25 +103,73 @@ class OnboardingActivity : ComponentActivity() {
 
         hideSystemBars()
 
+        /*
+         * Onboarding is its own Activity, so the Daylight theme globals
+         * (page, card, text, accent, font) would otherwise still hold
+         * their dark defaults. Applied here so the very first frame is
+         * already Daylight, and again from the composition whenever the
+         * appearance step or the phone's dark mode changes.
+         */
+        val systemDark =
+            (
+                    resources.configuration.uiMode and
+                            Configuration.UI_MODE_NIGHT_MASK
+                    ) ==
+                    Configuration.UI_MODE_NIGHT_YES
+
+        runCatching {
+            applyLauncherAppearance(
+                LauncherSettingsStore(
+                    this
+                ).load(),
+                systemDark
+            )
+        }
+
         setContent {
             TitanLauncherTheme {
-                PromptLauncherOnboarding(
-                    resumeRefresh =
-                        resumeRefreshState.intValue,
-                    initialStep =
-                        getSavedOnboardingStep(),
-                    onStepChanged = {
-                            step ->
 
-                        saveOnboardingStep(
-                            step
+                /*
+                 * The same 360 dp canvas and 1.16x text the launcher
+                 * uses, so Daylight sizes match the home screen.
+                 */
+                TitanUiScale {
+
+                    val baseDensity =
+                        LocalDensity.current
+
+                    val onboardingDensity =
+                        Density(
+                            density =
+                                baseDensity.density,
+                            fontScale =
+                                baseDensity.fontScale *
+                                        ReadabilityFontScale *
+                                        1.16f
                         )
-                    },
-                    onFinish = {
-                        markOnboardingComplete()
-                        openLauncher()
+
+                    CompositionLocalProvider(
+                        LocalDensity provides onboardingDensity
+                    ) {
+                        PromptLauncherOnboarding(
+                            resumeRefresh =
+                                resumeRefreshState.intValue,
+                            initialStep =
+                                getSavedOnboardingStep(),
+                            onStepChanged = {
+                                    step ->
+
+                                saveOnboardingStep(
+                                    step
+                                )
+                            },
+                            onFinish = {
+                                markOnboardingComplete()
+                                openLauncher()
+                            }
+                        )
                     }
-                )
+                }
             }
         }
     }
@@ -302,6 +349,24 @@ private fun PromptLauncherOnboarding(
         )
     }
 
+    /*
+     * Keeps the theme globals in step with the stored settings, so the
+     * appearance step re-themes onboarding as choices are made, and
+     * "auto" follows the phone's dark mode.
+     */
+    val systemDarkTheme =
+        isSystemInDarkTheme()
+
+    LaunchedEffect(
+        launcherSettings,
+        systemDarkTheme
+    ) {
+        applyLauncherAppearance(
+            launcherSettings,
+            systemDarkTheme
+        )
+    }
+
     val smsRoleManager =
         remember {
             SmsRoleManager(
@@ -403,6 +468,19 @@ private fun PromptLauncherOnboarding(
 
     var taskSetupMessage by remember {
         mutableStateOf<String?>(null)
+    }
+
+    var todoistSaved by remember {
+        mutableStateOf(
+            runCatching {
+                taskStore
+                    .getToken()
+                    .isNotBlank()
+            }
+                .getOrDefault(
+                    false
+                )
+        )
     }
 
     var googleTasksAuthorizing by remember {
@@ -658,10 +736,10 @@ private fun PromptLauncherOnboarding(
                     true
 
                 taskSetupMessage =
-                    "CONNECTED"
+                    null
             } else {
                 taskSetupMessage =
-                    "GOOGLE TASKS CONNECTION CANCELLED"
+                    "Google Tasks connection cancelled."
             }
         }
 
@@ -815,7 +893,7 @@ private fun PromptLauncherOnboarding(
             true
 
         taskSetupMessage =
-            "CONNECTING..."
+            null
 
         googleTasksAuth.authorize(
             onAuthorized = {
@@ -832,7 +910,7 @@ private fun PromptLauncherOnboarding(
                     false
 
                 taskSetupMessage =
-                    "CONNECTED"
+                    null
             },
             onNeedsUserConsent = {
                     pendingIntent ->
@@ -856,7 +934,7 @@ private fun PromptLauncherOnboarding(
                         false
 
                     taskSetupMessage =
-                        "COULDN'T OPEN GOOGLE SIGN-IN"
+                        "Couldn't open Google sign-in."
                 }
             },
             onError = {
@@ -871,30 +949,91 @@ private fun PromptLauncherOnboarding(
         )
     }
 
+    /*
+     * Saves a pasted Todoist token right away (the card's Save button),
+     * or on Continue if one is still in the field.
+     */
+    fun saveTodoistToken() {
+        if (
+            todoistToken.isBlank()
+        ) {
+            return
+        }
+
+        taskStore
+            .saveToken(
+                todoistToken.trim()
+            )
+
+        taskProvider =
+            TaskProvider.TODOIST
+
+        todoistToken =
+            ""
+
+        todoistSaved =
+            true
+
+        taskSetupMessage =
+            null
+    }
+
+    /*
+     * DAYLIGHT LAYOUT
+     *
+     * Page grey, "Step N of 8" beside the camera with Skip on the
+     * right, the step's title and cards in the middle (scrolling on
+     * the tallest steps), and the actions pinned to the bottom.
+     */
+    val headerTrailing: String? =
+        when (
+            step
+        ) {
+            0 -> "Skip setup"
+            1 -> "Everything stays on your phone"
+            ONBOARDING_LAST_STEP -> null
+            else -> "Skip"
+        }
+
+    /*
+     * "Skip setup" on the welcome page goes straight to the last page,
+     * which still finishes through Start prompting. "Skip" on the
+     * others moves on without saving anything typed on that step.
+     */
+    val headerTrailingAction: (() -> Unit)? =
+        when (
+            step
+        ) {
+            0 -> {
+                {
+                    step =
+                        ONBOARDING_LAST_STEP
+                }
+            }
+
+            1, ONBOARDING_LAST_STEP -> null
+
+            else -> {
+                {
+                    step =
+                        (step + 1).coerceAtMost(
+                            ONBOARDING_LAST_STEP
+                        )
+                }
+            }
+        }
+
     Box(
         modifier =
             Modifier
                 .fillMaxSize()
                 .background(
-                    Color.Black
-                )
-                /*
-                 * The Titan's camera sits in the top-left of the
-                 * panel and was clipping the header, which a fixed
-                 * top padding could never account for. Insetting by
-                 * the reported cutout lets the OS say how much room
-                 * the camera needs, on any device.
-                 */
-                .windowInsetsPadding(
-                    WindowInsets.displayCutout
-                        .union(
-                            WindowInsets.statusBars
-                        )
+                    BackgroundBlack
                 )
                 .padding(
-                    start = 28.dp,
-                    end = 24.dp,
-                    top = 26.dp,
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 16.dp,
                     bottom = 16.dp
                 )
     ) {
@@ -903,59 +1042,19 @@ private fun PromptLauncherOnboarding(
                 Modifier.fillMaxSize()
         ) {
 
-            Row(
-                modifier =
-                    Modifier.fillMaxWidth(),
-                verticalAlignment =
-                    Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        )
-                ) {
-                    Text(
-                        text =
-                            "PROMPT LAUNCHER",
-                        color =
-                            Color(0xFFF1F1F1),
-                        fontSize =
-                            22.sp,
-                        fontFamily =
-                            PoppinsFamily,
-                        fontWeight =
-                            FontWeight.Bold
-                    )
-
-                    Text(
-                        text =
-                            "BETA $displayedVersion",
-                        color =
-                            Color(0xFF707070),
-                        fontSize =
-                            12.5.sp,
-                        fontFamily =
-                            PoppinsFamily
-                    )
-                }
-
-                Text(
-                    text =
-                        "${step + 1} / 8",
-                    color =
-                        Color(0xFF707070),
-                    fontSize =
-                        14.sp,
-                    fontFamily =
-                        PoppinsFamily
-                )
-            }
+            DaylightOnboardingHeader(
+                stepLabel =
+                    "Step ${step + 1} of $ONBOARDING_STEP_COUNT",
+                trailing =
+                    headerTrailing,
+                onTrailingClick =
+                    headerTrailingAction
+            )
 
             Spacer(
                 modifier =
                     Modifier.height(
-                        18.dp
+                        12.dp
                     )
             )
 
@@ -966,12 +1065,6 @@ private fun PromptLauncherOnboarding(
                         .weight(
                             1f
                         )
-                        /*
-                         * Larger type plus the cutout inset leaves
-                         * less room than before, so step content
-                         * scrolls rather than clipping on the
-                         * tallest pages.
-                         */
                         .verticalScroll(
                             rememberScrollState()
                         )
@@ -980,7 +1073,10 @@ private fun PromptLauncherOnboarding(
                     step
                 ) {
                     0 -> {
-                        WelcomeStep()
+                        WelcomeStep(
+                            versionName =
+                                displayedVersion
+                        )
                     }
 
                     1 -> {
@@ -1001,6 +1097,9 @@ private fun PromptLauncherOnboarding(
                                 permissionAttempted,
                             usageAccessReady =
                                 usageAccessReady,
+                            onAllow = {
+                                requestSetupPermissions()
+                            },
                             onOpenSettings = {
                                 openApplicationSettings()
                             },
@@ -1017,7 +1116,10 @@ private fun PromptLauncherOnboarding(
                     2 -> {
                         HomeStep(
                             homeReady =
-                                homeReady
+                                homeReady,
+                            onChooseHome = {
+                                requestHomeRole()
+                            }
                         )
                     }
 
@@ -1048,12 +1150,17 @@ private fun PromptLauncherOnboarding(
                                 taskSetupMessage,
                             todoistToken =
                                 todoistToken,
+                            todoistSaved =
+                                todoistSaved,
                             onTodoistTokenChange = {
                                 todoistToken =
                                     it
                             },
                             onConnectGoogleTasks = {
                                 connectGoogleTasks()
+                            },
+                            onSaveTodoist = {
+                                saveTodoistToken()
                             }
                         )
                     }
@@ -1104,7 +1211,7 @@ private fun PromptLauncherOnboarding(
             Spacer(
                 modifier =
                     Modifier.height(
-                        10.dp
+                        12.dp
                     )
             )
 
@@ -1129,10 +1236,10 @@ private fun PromptLauncherOnboarding(
                 step
             ) {
                 0 -> {
-                    SetupPrimaryButton(
-                        text =
-                            "GET STARTED",
-                        onClick = {
+                    DaylightOnboardingActions(
+                        primaryLabel =
+                            "Get started",
+                        onPrimary = {
                             step =
                                 1
                         }
@@ -1140,16 +1247,16 @@ private fun PromptLauncherOnboarding(
                 }
 
                 1 -> {
-                    SetupPrimaryButton(
-                        text =
+                    DaylightOnboardingActions(
+                        primaryLabel =
                             if (
                                 shouldRequestPermissions
                             ) {
-                                "ALLOW ACCESS"
+                                "Allow access"
                             } else {
-                                "CONTINUE"
+                                "Continue"
                             },
-                        onClick = {
+                        onPrimary = {
                             if (
                                 shouldRequestPermissions
                             ) {
@@ -1171,20 +1278,8 @@ private fun PromptLauncherOnboarding(
                                 step =
                                     2
                             }
-                        }
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.dp
-                            )
-                    )
-
-                    SetupSecondaryButton(
-                        text =
-                            "BACK",
-                        onClick = {
+                        },
+                        onBack = {
                             step =
                                 0
                         }
@@ -1192,16 +1287,16 @@ private fun PromptLauncherOnboarding(
                 }
 
                 2 -> {
-                    SetupPrimaryButton(
-                        text =
+                    DaylightOnboardingActions(
+                        primaryLabel =
                             if (
                                 homeReady
                             ) {
-                                "CONTINUE"
+                                "Continue"
                             } else {
-                                "CHOOSE PROMPT LAUNCHER"
+                                "Choose Prompt Launcher"
                             },
-                        onClick = {
+                        onPrimary = {
                             if (
                                 homeReady
                             ) {
@@ -1210,20 +1305,8 @@ private fun PromptLauncherOnboarding(
                             } else {
                                 requestHomeRole()
                             }
-                        }
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.dp
-                            )
-                    )
-
-                    SetupSecondaryButton(
-                        text =
-                            "BACK",
-                        onClick = {
+                        },
+                        onBack = {
                             step =
                                 1
                         }
@@ -1231,26 +1314,14 @@ private fun PromptLauncherOnboarding(
                 }
 
                 3 -> {
-                    SetupPrimaryButton(
-                        text =
-                            "CONTINUE",
-                        onClick = {
+                    DaylightOnboardingActions(
+                        primaryLabel =
+                            "Continue",
+                        onPrimary = {
                             step =
                                 4
-                        }
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.dp
-                            )
-                    )
-
-                    SetupSecondaryButton(
-                        text =
-                            "BACK",
-                        onClick = {
+                        },
+                        onBack = {
                             step =
                                 2
                         }
@@ -1261,103 +1332,50 @@ private fun PromptLauncherOnboarding(
                     val taskButtonText =
                         when {
                             todoistToken.isNotBlank() ->
-                                "USE TODOIST & CONTINUE"
+                                "Save & continue"
 
                             taskProvider ==
                                     TaskProvider.GOOGLE_TASKS ->
-                                "CONTINUE"
+                                "Continue"
 
                             taskProvider ==
                                     TaskProvider.TODOIST ->
-                                "CONTINUE"
+                                "Continue"
 
                             else ->
-                                "SKIP FOR NOW"
+                                "Skip for now"
                         }
 
-                    SetupPrimaryButton(
-                        text =
+                    DaylightOnboardingActions(
+                        primaryLabel =
                             taskButtonText,
-                        onClick = {
-
-                            if (
-                                todoistToken.isNotBlank()
-                            ) {
-                                taskStore
-                                    .saveToken(
-                                        todoistToken.trim()
-                                    )
-
-                                taskProvider =
-                                    TaskProvider.TODOIST
-
-                                todoistToken =
-                                    ""
-                            }
+                        onPrimary = {
+                            saveTodoistToken()
 
                             step =
                                 5
-                        }
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.dp
-                            )
-                    )
-
-                    SetupSecondaryButton(
-                        text =
-                            "BACK",
-                        onClick = {
+                        },
+                        onBack = {
                             step =
                                 3
                         }
                     )
                 }
 
-                6 -> {
-                    SetupPrimaryButton(
-                        text =
-                            "CONTINUE",
-                        onClick = {
-                            step =
-                                7
-                        }
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.dp
-                            )
-                    )
-
-                    SetupSecondaryButton(
-                        text =
-                            "BACK",
-                        onClick = {
-                            step =
-                                5
-                        }
-                    )
-                }
-
                 5 -> {
-                    SetupPrimaryButton(
-                        text =
+                    DaylightOnboardingActions(
+                        primaryLabel =
                             when {
                                 geminiApiKey.isNotBlank() ->
-                                    "SAVE & CONTINUE"
+                                    "Save & continue"
 
                                 geminiSaved ->
-                                    "CONTINUE"
+                                    "Continue"
 
                                 else ->
-                                    "SKIP FOR NOW"
+                                    "Skip for now"
                             },
-                        onClick = {
+                        onPrimary = {
 
                             if (
                                 geminiApiKey.isNotBlank()
@@ -1376,31 +1394,34 @@ private fun PromptLauncherOnboarding(
 
                             step =
                                 6
-                        }
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.dp
-                            )
-                    )
-
-                    SetupSecondaryButton(
-                        text =
-                            "BACK",
-                        onClick = {
+                        },
+                        onBack = {
                             step =
                                 4
                         }
                     )
                 }
 
+                6 -> {
+                    DaylightOnboardingActions(
+                        primaryLabel =
+                            "Continue",
+                        onPrimary = {
+                            step =
+                                7
+                        },
+                        onBack = {
+                            step =
+                                5
+                        }
+                    )
+                }
+
                 else -> {
-                    SetupPrimaryButton(
-                        text =
-                            "START PROMPTING",
-                        onClick =
+                    DaylightOnboardingActions(
+                        primaryLabel =
+                            "Start prompting",
+                        onPrimary =
                             onFinish
                     )
                 }
@@ -1409,66 +1430,138 @@ private fun PromptLauncherOnboarding(
     }
 }
 
+private const val ONBOARDING_STEP_COUNT =
+    8
+
+private const val ONBOARDING_LAST_STEP =
+    ONBOARDING_STEP_COUNT - 1
+
+/*
+ * WELCOME (D-Welcome)
+ *
+ * The hour ring around the accent key, the name, the one-line pitch.
+ */
 @Composable
-private fun WelcomeStep() {
-    Column {
-        Text(
-            text =
-                "YOUR PHONE,\nBY PROMPT.",
-            color =
-                Color(0xFFF1F1F1),
-            fontSize =
-                32.sp,
-            lineHeight =
-                38.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
-        )
+private fun WelcomeStep(
+    versionName: String
+) {
+    Column(
+        modifier =
+            Modifier.fillMaxWidth(),
+        horizontalAlignment =
+            Alignment.CenterHorizontally
+    ) {
 
         Spacer(
             modifier =
                 Modifier.height(
-                    14.dp
+                    8.dp
+                )
+        )
+
+        DaylightWelcomeRing()
+
+        Spacer(
+            modifier =
+                Modifier.height(
+                    12.dp
+                )
+        )
+
+        Column(
+            horizontalAlignment =
+                Alignment.CenterHorizontally,
+            verticalArrangement =
+                Arrangement.spacedBy(
+                    6.5.dp
+                )
+        ) {
+
+            Text(
+                text =
+                    "Prompt Launcher",
+                color =
+                    PrimaryText,
+                fontSize =
+                    26.5.sp,
+                lineHeight =
+                    27.sp,
+                letterSpacing =
+                    (-0.8).sp,
+                fontFamily =
+                    InterfaceFont,
+                fontWeight =
+                    FontWeight.Bold,
+                textAlign =
+                    TextAlign.Center
+            )
+
+            Text(
+                text =
+                    "Type what you want. Press Enter.",
+                color =
+                    PrimaryText,
+                fontSize =
+                    12.sp,
+                lineHeight =
+                    15.sp,
+                fontFamily =
+                    InterfaceFont,
+                fontWeight =
+                    FontWeight.Medium,
+                textAlign =
+                    TextAlign.Center
+            )
+
+            Text(
+                text =
+                    "Text, call, add events and to-dos, or search, all from one line on your home screen.",
+                color =
+                    SecondaryText,
+                fontSize =
+                    10.sp,
+                lineHeight =
+                    13.5.sp,
+                fontFamily =
+                    InterfaceFont,
+                textAlign =
+                    TextAlign.Center,
+                modifier =
+                    Modifier.widthIn(
+                        max = 246.dp
+                    )
+            )
+        }
+
+        Spacer(
+            modifier =
+                Modifier.height(
+                    10.dp
                 )
         )
 
         Text(
             text =
-                "Prompt Launcher keeps the things you need close and everything else out of the way.",
+                "Version $versionName",
             color =
-                Color(0xFF999999),
+                TertiaryText,
             fontSize =
-                17.sp,
+                8.sp,
             lineHeight =
-                23.sp,
+                10.sp,
             fontFamily =
-                PoppinsFamily
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    18.dp
-                )
-        )
-
-        Text(
-            text =
-                "We’ll set up the essentials, then connect any optional services you want to use.",
-            color =
-                Color(0xFF666666),
-            fontSize =
-                14.sp,
-            lineHeight =
-                20.sp,
-            fontFamily =
-                PoppinsFamily
+                InterfaceFont
         )
     }
 }
 
+/*
+ * DEVICE ACCESS (D-Access)
+ *
+ * One card, one row per permission: what it is, what it unlocks, and
+ * a pill on the right — accent "Allow" when needed, a green tick once
+ * granted, grey for the optional ones.
+ */
 @Composable
 private fun PermissionsStep(
     contactsReady: Boolean,
@@ -1479,177 +1572,155 @@ private fun PermissionsStep(
     weatherSnapshot: WeatherSnapshot?,
     permissionAttempted: Boolean,
     usageAccessReady: Boolean,
+    onAllow: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenUsageAccess: () -> Unit,
     onRetryWeather: () -> Unit
 ) {
-    Column {
-        Text(
-            text =
-                "DEVICE ACCESS",
-            color =
-                Color(0xFFF1F1F1),
-            fontSize =
-                26.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
+    Column(
+        modifier =
+            Modifier.fillMaxWidth(),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                10.dp
+            )
+    ) {
+
+        DaylightOnboardingTitle(
+            title =
+                "What Prompt Launcher can see",
+            subtitle =
+                "Each one turns on a feature. Skip any you don't want."
         )
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    6.dp
+        DaylightCard {
+
+            DaylightListRow(
+                title =
+                    "Contacts",
+                detail =
+                    "Text and call people by name"
+            ) {
+                RequiredPermissionPill(
+                    ready =
+                        contactsReady,
+                    onAllow =
+                        onAllow
                 )
-        )
-
-        Text(
-            text =
-                "Prompt uses a few Android permissions to keep your launcher useful.",
-            color =
-                Color(0xFF999999),
-            fontSize =
-                14.sp,
-            lineHeight =
-                20.sp,
-            fontFamily =
-                PoppinsFamily
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    12.dp
-                )
-        )
-
-        CompactPermissionStatusRow(
-            label =
-                "CONTACTS",
-            status =
-                if (
-                    contactsReady
-                ) {
-                    "READY"
-                } else {
-                    "NEEDED"
-                },
-            ready =
-                contactsReady
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    7.dp
-                )
-        )
-
-        CompactPermissionStatusRow(
-            label =
-                "CALENDAR",
-            status =
-                if (
-                    calendarReady
-                ) {
-                    "READY"
-                } else {
-                    "NEEDED"
-                },
-            ready =
-                calendarReady
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    7.dp
-                )
-        )
-
-        val weatherStatus =
-            when {
-                !weatherPermissionReady ->
-                    "OPTIONAL"
-
-                weatherChecking ->
-                    "CHECKING"
-
-                weatherSnapshot != null ->
-                    "READY"
-
-                weatherCheckAttempted ->
-                    "WAITING"
-
-                else ->
-                    "ENABLED"
             }
 
-        CompactPermissionStatusRow(
-            label =
-                "WEATHER",
-            status =
-                weatherStatus,
-            ready =
-                weatherSnapshot != null
-        )
+            DaylightRowDivider()
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    7.dp
+            DaylightListRow(
+                title =
+                    "Calendar",
+                detail =
+                    "Your next event, and adding events with :"
+            ) {
+                RequiredPermissionPill(
+                    ready =
+                        calendarReady,
+                    onAllow =
+                        onAllow
                 )
-        )
+            }
 
-        /*
-         * Tappable until granted: opens the Usage Access screen.
-         * Status refreshes on return through resumeRefresh.
-         */
-        Box(
-            modifier =
+            DaylightRowDivider()
+
+            DaylightListRow(
+                title =
+                    "Location",
+                detail =
+                    "Approximate, for the weather"
+            ) {
+                when {
+                    !weatherPermissionReady ->
+                        DaylightStatusPill(
+                            label =
+                                "Allow",
+                            kind =
+                                DaylightPillKind.NEUTRAL,
+                            onClick =
+                                onAllow
+                        )
+
+                    weatherChecking ->
+                        DaylightStatusPill(
+                            label =
+                                "Checking",
+                            kind =
+                                DaylightPillKind.NEUTRAL
+                        )
+
+                    weatherSnapshot != null ->
+                        DaylightStatusPill(
+                            label =
+                                "Ready",
+                            kind =
+                                DaylightPillKind.READY
+                        )
+
+                    weatherCheckAttempted ->
+                        DaylightStatusPill(
+                            label =
+                                "Retry",
+                            kind =
+                                DaylightPillKind.NEUTRAL,
+                            onClick =
+                                onRetryWeather
+                        )
+
+                    else ->
+                        DaylightStatusPill(
+                            label =
+                                "On",
+                            kind =
+                                DaylightPillKind.READY
+                        )
+                }
+            }
+
+            DaylightRowDivider()
+
+            /*
+             * Usage Access has no runtime dialog: the pill opens its
+             * system screen, and the status refreshes on return
+             * through resumeRefresh.
+             */
+            DaylightListRow(
+                title =
+                    "Usage access",
+                detail =
+                    "Fills in the 24-hour ring"
+            ) {
                 if (
                     usageAccessReady
                 ) {
-                    Modifier.fillMaxWidth()
+                    DaylightStatusPill(
+                        label =
+                            "Ready",
+                        kind =
+                            DaylightPillKind.READY
+                    )
                 } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            onOpenUsageAccess()
-                        }
+                    DaylightStatusPill(
+                        label =
+                            "Optional",
+                        kind =
+                            DaylightPillKind.NEUTRAL,
+                        onClick =
+                            onOpenUsageAccess
+                    )
                 }
-        ) {
-            CompactPermissionStatusRow(
-                label =
-                    "PRODUCTIVITY",
-                status =
-                    if (
-                        usageAccessReady
-                    ) {
-                        "READY"
-                    } else {
-                        "ALLOW →"
-                    },
-                ready =
-                    usageAccessReady
-            )
+            }
         }
 
         if (
             !usageAccessReady
         ) {
-            Text(
+            DaylightOnboardingNote(
                 text =
-                    "Turn on Usage Access for Prompt Launcher so the hourly dots can fill in. If the switch is grayed out, open App info → ⋮ → Allow restricted settings first.",
-                color =
-                    Color(0xFF5F5F5F),
-                fontSize =
-                    11.5.sp,
-                lineHeight =
-                    15.5.sp,
-                fontFamily =
-                    PoppinsFamily
+                    "Usage access lets the hourly dots fill in. If its switch is greyed out, open App info → ⋮ → Allow restricted settings first."
             )
         }
 
@@ -1660,13 +1731,6 @@ private fun PermissionsStep(
                             !calendarReady
                     )
         ) {
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        10.dp
-                    )
-            )
-
             Row(
                 modifier =
                     Modifier.fillMaxWidth(),
@@ -1675,32 +1739,16 @@ private fun PermissionsStep(
                 verticalAlignment =
                     Alignment.CenterVertically
             ) {
-                Text(
+                DaylightOnboardingNote(
                     text =
-                        "Access still disabled.",
-                    color =
-                        Color(0xFF777777),
-                    fontSize =
-                        12.sp,
-                    fontFamily =
-                        PoppinsFamily
+                        "Access is still off."
                 )
 
-                Text(
+                DaylightOnboardingLink(
                     text =
-                        "APP SETTINGS →",
-                    color =
-                        Color(0xFFFF6438),
-                    fontSize =
-                        12.sp,
-                    fontFamily =
-                        PoppinsFamily,
-                    fontWeight =
-                        FontWeight.Bold,
-                    modifier =
-                        Modifier.clickable {
-                            onOpenSettings()
-                        }
+                        "App settings →",
+                    onClick =
+                        onOpenSettings
                 )
             }
         } else if (
@@ -1708,48 +1756,9 @@ private fun PermissionsStep(
             weatherCheckAttempted &&
             weatherSnapshot == null
         ) {
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        9.dp
-                    )
-            )
-
-            Text(
+            DaylightOnboardingNote(
                 text =
-                    "Location access is on, but weather isn't available yet.",
-                color =
-                    Color(0xFF5F5F5F),
-                fontSize =
-                    11.5.sp,
-                lineHeight =
-                    15.5.sp,
-                fontFamily =
-                    PoppinsFamily
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        5.dp
-                    )
-            )
-
-            Text(
-                text =
-                    "RETRY WEATHER →",
-                color =
-                    Color(0xFFFF6438),
-                fontSize =
-                    11.5.sp,
-                fontFamily =
-                    PoppinsFamily,
-                fontWeight =
-                    FontWeight.Bold,
-                modifier =
-                    Modifier.clickable {
-                        onRetryWeather()
-                    }
+                    "Location is on, but the weather isn't available yet."
             )
         } else if (
             permissionAttempted &&
@@ -1757,32 +1766,43 @@ private fun PermissionsStep(
             calendarReady &&
             !weatherPermissionReady
         ) {
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        9.dp
-                    )
-            )
-
-            Text(
+            DaylightOnboardingNote(
                 text =
-                    "Weather is optional. Prompt still works without it.",
-                color =
-                    Color(0xFF5F5F5F),
-                fontSize =
-                    11.5.sp,
-                lineHeight =
-                    15.5.sp,
-                fontFamily =
-                    PoppinsFamily
+                    "Weather is optional. Prompt Launcher works without it."
             )
         }
     }
 }
 
+@Composable
+private fun RequiredPermissionPill(
+    ready: Boolean,
+    onAllow: () -> Unit
+) {
+    if (
+        ready
+    ) {
+        DaylightStatusPill(
+            label =
+                "Ready",
+            kind =
+                DaylightPillKind.READY
+        )
+    } else {
+        DaylightStatusPill(
+            label =
+                "Allow",
+            kind =
+                DaylightPillKind.ACCENT,
+            onClick =
+                onAllow
+        )
+    }
+}
+
 /*
- * Styled like Android's permission prompts. Allow hands off to the
- * Usage Access screen, since the toggle itself only lives there.
+ * Shown once after the Android prompts. Allow hands off to the Usage
+ * Access screen, since the toggle itself only lives there.
  */
 @Composable
 private fun UsageAccessPromptDialog(
@@ -1798,41 +1818,28 @@ private fun UsageAccessPromptDialog(
                 Modifier
                     .fillMaxWidth()
                     .background(
-                        Color(0xFF141414),
+                        SurfaceBlack,
                         RoundedCornerShape(
-                            18.dp
+                            16.dp
                         )
                     )
-                    .border(
-                        width =
-                            1.dp,
-                        color =
-                            Color(0xFF242424),
-                        shape =
-                            RoundedCornerShape(
-                                18.dp
-                            )
-                    )
                     .padding(
-                        horizontal =
-                            18.dp,
-                        vertical =
-                            18.dp
+                        16.dp
                     ),
             horizontalAlignment =
                 Alignment.CenterHorizontally
         ) {
             Text(
                 text =
-                    "Allow Prompt Launcher to access app usage?",
+                    "Allow Prompt Launcher to see app usage?",
                 color =
-                    Color(0xFFF1F1F1),
+                    PrimaryText,
                 fontSize =
-                    16.sp,
+                    13.sp,
                 lineHeight =
-                    21.sp,
+                    16.sp,
                 fontFamily =
-                    PoppinsFamily,
+                    InterfaceFont,
                 fontWeight =
                     FontWeight.Bold,
                 textAlign =
@@ -1842,21 +1849,21 @@ private fun UsageAccessPromptDialog(
             Spacer(
                 modifier =
                     Modifier.height(
-                        8.dp
+                        6.dp
                     )
             )
 
             Text(
                 text =
-                    "This powers your hourly productivity dots. On the next screen, tap Prompt Launcher and turn on usage access.",
+                    "This fills in the 24-hour ring. On the next screen, tap Prompt Launcher and turn on usage access.",
                 color =
-                    Color(0xFF999999),
+                    SecondaryText,
                 fontSize =
-                    12.5.sp,
+                    10.sp,
                 lineHeight =
-                    17.sp,
+                    13.5.sp,
                 fontFamily =
-                    PoppinsFamily,
+                    InterfaceFont,
                 textAlign =
                     TextAlign.Center
             )
@@ -1864,13 +1871,13 @@ private fun UsageAccessPromptDialog(
             Spacer(
                 modifier =
                     Modifier.height(
-                        16.dp
+                        14.dp
                     )
             )
 
-            SetupPrimaryButton(
-                text =
-                    "ALLOW",
+            DaylightPrimaryButton(
+                label =
+                    "Allow",
                 onClick =
                     onAllow
             )
@@ -1882,9 +1889,11 @@ private fun UsageAccessPromptDialog(
                     )
             )
 
-            SetupSecondaryButton(
-                text =
-                    "NOT NOW",
+            DaylightSecondaryButton(
+                label =
+                    "Not now",
+                modifier =
+                    Modifier.fillMaxWidth(),
                 onClick =
                     onDismiss
             )
@@ -1893,12 +1902,12 @@ private fun UsageAccessPromptDialog(
 }
 
 /*
- * EMAIL
+ * EMAIL (D-Email)
  *
- * Email works like texting: Prompt Launcher shows new mail on the home
- * screen and in the hub, and opening it goes to the email app. This
- * step picks which email apps count. The first one picked is the main
- * app that opens for "mail". Changeable later in settings → noti.
+ * Email works like texting: Daylight shows new mail on the home screen
+ * and in the hub, and opening it goes to the email app. This step
+ * picks which email apps count. The first one picked is the main app
+ * that opens for "mail". Changeable later in settings.
  */
 @Composable
 private fun EmailSetupStep(
@@ -1918,285 +1927,217 @@ private fun EmailSetupStep(
             )
         }
 
-    Column {
-        Text(
-            text =
-                "EMAIL",
-            color =
-                Color(0xFFF1F1F1),
-            fontSize =
-                26.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
-        )
+    Column(
+        modifier =
+            Modifier.fillMaxWidth(),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                10.dp
+            )
+    ) {
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    6.dp
-                )
-        )
-
-        Text(
-            text =
-                "Pick the email apps you use. New mail shows on your home screen and in the hub, and opens in that app, just like texts. The first one you pick is your main email app.",
-            color =
-                Color(0xFF999999),
-            fontSize =
-                14.sp,
-            lineHeight =
-                20.sp,
-            fontFamily =
-                PoppinsFamily
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    12.dp
-                )
+        DaylightOnboardingTitle(
+            title =
+                "Where's your email?",
+            subtitle =
+                "New mail shows on home. Tapping it opens the email in its own app."
         )
 
         if (
             providers.isEmpty()
         ) {
-            Text(
-                text =
-                    "No email apps found. You can pick one later in settings → noti.",
-                color =
-                    Color(0xFF777777),
-                fontSize =
-                    12.sp,
-                lineHeight =
-                    17.sp,
-                fontFamily =
-                    PoppinsFamily
-            )
-        }
-
-        providers.forEach { provider ->
-
-            val picked =
-                provider.packageName in
-                        settings.mailApps
-
-            val isMain =
-                settings.mailApps.firstOrNull() ==
-                        provider.packageName
-
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            onSettingsChange(
-                                settings.copy(
-                                    mailApps =
-                                        if (
-                                            picked
-                                        ) {
-                                            settings.mailApps -
-                                                    provider.packageName
-                                        } else {
-                                            settings.mailApps +
-                                                    provider.packageName
-                                        }
-                                )
-                            )
-                        }
+            DaylightCard(
+                verticalPadding =
+                    11.dp
             ) {
-                CompactPermissionStatusRow(
-                    label =
-                        provider.label.uppercase(),
-                    status =
-                        when {
-                            isMain -> "MAIN"
-                            picked -> "ON"
-                            else -> "ADD"
-                        },
-                    ready =
-                        picked
+                DaylightOnboardingNote(
+                    text =
+                        "No email apps found. You can pick one later in Settings."
                 )
             }
+        } else {
+            DaylightCard {
+                providers.forEachIndexed { index, provider ->
 
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        7.dp
-                    )
-            )
+                    val picked =
+                        provider.packageName in
+                                settings.mailApps
+
+                    val isMain =
+                        settings.mailApps.firstOrNull() ==
+                                provider.packageName
+
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(
+                                    min = 36.dp
+                                )
+                                .clickable {
+                                    onSettingsChange(
+                                        settings.copy(
+                                            mailApps =
+                                                if (
+                                                    picked
+                                                ) {
+                                                    settings.mailApps -
+                                                            provider.packageName
+                                                } else {
+                                                    settings.mailApps +
+                                                            provider.packageName
+                                                }
+                                        )
+                                    )
+                                }
+                                .padding(
+                                    vertical =
+                                        9.dp
+                                ),
+                        verticalAlignment =
+                            Alignment.CenterVertically,
+                        horizontalArrangement =
+                            Arrangement.spacedBy(
+                                10.dp
+                            )
+                    ) {
+                        DaylightCheckbox(
+                            checked =
+                                picked
+                        )
+
+                        Text(
+                            text =
+                                provider.label,
+                            color =
+                                PrimaryText,
+                            fontSize =
+                                10.5.sp,
+                            lineHeight =
+                                13.sp,
+                            fontFamily =
+                                InterfaceFont,
+                            fontWeight =
+                                FontWeight.SemiBold,
+                            maxLines =
+                                1,
+                            overflow =
+                                TextOverflow.Ellipsis,
+                            modifier =
+                                Modifier.weight(
+                                    1f
+                                )
+                        )
+
+                        if (
+                            isMain
+                        ) {
+                            DaylightAccentTag(
+                                text =
+                                    "Main"
+                            )
+                        }
+                    }
+
+                    if (
+                        index < providers.lastIndex
+                    ) {
+                        DaylightRowDivider()
+                    }
+                }
+            }
         }
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    5.dp
-                )
-        )
-
-        Text(
+        DaylightOnboardingNote(
             text =
-                "Picking none uses every email app on your phone.",
-            color =
-                Color(0xFF5F5F5F),
-            fontSize =
-                11.5.sp,
-            lineHeight =
-                15.5.sp,
-            fontFamily =
-                PoppinsFamily
+                "The first one you pick is your main app. Picking none uses every email app. Change it anytime in Settings."
         )
     }
 }
 
-@Composable
-private fun CompactPermissionStatusRow(
-    label: String,
-    status: String,
-    ready: Boolean
-) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(
-                    min = 24.dp
-                ),
-        horizontalArrangement =
-            Arrangement.SpaceBetween,
-        verticalAlignment =
-            Alignment.CenterVertically
-    ) {
-        Text(
-            text =
-                label,
-            color =
-                Color(0xFF999999),
-            fontSize =
-                14.sp,
-            fontFamily =
-                PoppinsFamily
-        )
-
-        Text(
-            text =
-                status,
-            color =
-                if (
-                    ready
-                ) {
-                    Color(0xFFF1F1F1)
-                } else {
-                    Color(0xFFFF6438)
-                },
-            fontSize =
-                12.5.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
-        )
-    }
-}
-
+/*
+ * DEFAULT HOME
+ *
+ * No mockup of its own; drawn like D-Tasks: one service card with the
+ * state on the right.
+ */
 @Composable
 private fun HomeStep(
-    homeReady: Boolean
+    homeReady: Boolean,
+    onChooseHome: () -> Unit
 ) {
-    Column {
-        StepTitle(
+    Column(
+        modifier =
+            Modifier.fillMaxWidth(),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                10.dp
+            )
+    ) {
+
+        DaylightOnboardingTitle(
             title =
-                "MAKE IT HOME",
-            description =
-                "Choose Prompt Launcher as your default Home app so the Home button always returns here."
+                "Make Prompt Launcher home",
+            subtitle =
+                "Set Prompt Launcher as your Home app so the Home button always comes back here."
         )
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    20.dp
-                )
-        )
-
-        Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-            horizontalArrangement =
-                Arrangement.SpaceBetween,
-            verticalAlignment =
-                Alignment.CenterVertically
+        DaylightCard(
+            horizontalPadding =
+                11.5.dp,
+            verticalPadding =
+                11.5.dp
         ) {
-            Text(
-                text =
-                    "DEFAULT HOME",
-                color =
-                    Color(0xFF999999),
-                fontSize =
-                    15.sp,
-                fontFamily =
-                    PoppinsFamily
-            )
-
-            Text(
-                text =
+            DaylightServiceHeader(
+                icon =
+                    DaylightTileIcon.HOME,
+                tint =
+                    AccentOrange,
+                title =
+                    "Default home app",
+                detail =
                     if (
                         homeReady
                     ) {
-                        "READY"
+                        "Prompt Launcher is your Home app"
                     } else {
-                        "NOT SET"
-                    },
-                color =
-                    if (
-                        homeReady
-                    ) {
-                        Color(0xFFF1F1F1)
-                    } else {
-                        Color(0xFFFF6438)
-                    },
-                fontSize =
-                    14.sp,
-                fontFamily =
-                    PoppinsFamily,
-                fontWeight =
-                    FontWeight.Bold
-            )
-        }
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    4.dp
-                )
-        )
-
-        Text(
-            text =
+                        "Android will ask which launcher to use"
+                    }
+            ) {
                 if (
                     homeReady
                 ) {
-                    "Prompt Launcher is now your Home app."
+                    DaylightStatusPill(
+                        label =
+                            "Ready",
+                        kind =
+                            DaylightPillKind.READY
+                    )
                 } else {
-                    "Android will ask which launcher you want to use."
-                },
-            color =
-                Color(0xFF666666),
-            fontSize =
-                12.5.sp,
-            lineHeight =
-                15.5.sp,
-            fontFamily =
-                PoppinsFamily,
-            modifier =
-                Modifier.fillMaxWidth(),
-            textAlign =
-                TextAlign.Start
+                    DaylightStatusPill(
+                        label =
+                            "Set",
+                        kind =
+                            DaylightPillKind.ACCENT,
+                        onClick =
+                            onChooseHome
+                    )
+                }
+            }
+        }
+
+        DaylightOnboardingNote(
+            text =
+                "You can switch back in Android's Settings → Apps → Default apps."
         )
     }
 }
 
+/*
+ * Retained but no longer part of onboarding (see smsRoleAvailable in
+ * PromptLauncherOnboarding). Drawn in the Daylight style so it is ready
+ * if the step returns.
+ */
 @Composable
 private fun MessagesSetupStep(
     smsReady: Boolean,
@@ -2206,211 +2147,89 @@ private fun MessagesSetupStep(
 
     Column(
         modifier =
-            Modifier.fillMaxSize()
+            Modifier.fillMaxWidth(),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                10.dp
+            )
     ) {
 
-        StepTitle(
+        DaylightOnboardingTitle(
             title =
-                "MESSAGES",
-            description =
+                "Messages",
+            subtitle =
                 "Choose Prompt Launcher as your default SMS app."
         )
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    8.dp
-                )
-        )
-
-        Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-            horizontalArrangement =
-                Arrangement.SpaceBetween,
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            Text(
-                text =
-                    "DEFAULT SMS APP",
-                color =
-                    Color(0xFF999999),
-                fontSize =
-                    14.sp,
-                fontFamily =
-                    PoppinsFamily
-            )
-
-            Text(
-                text =
+        DaylightCard {
+            DaylightListRow(
+                title =
+                    "Default SMS app",
+                detail =
                     when {
-
                         smsReady ->
-                            "READY"
+                            "Messages are ready inside Prompt Launcher"
 
                         !smsRoleAvailable ->
-                            "UNAVAILABLE"
+                            "Unavailable on this device"
 
                         else ->
-                            "NOT SET"
-                    },
-                color =
-                    if (
-                        smsReady
-                    ) {
-                        Color(0xFFF1F1F1)
-                    } else {
-                        Color(0xFFFF6438)
-                    },
-                fontSize =
-                    12.5.sp,
-                fontFamily =
-                    PoppinsFamily,
-                fontWeight =
-                    FontWeight.Bold
-            )
-        }
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    7.dp
-                )
-        )
-
-        Text(
-            text =
+                            "Android will ask which app handles SMS"
+                    }
+            ) {
                 when {
-
                     smsReady ->
-                        "Messages are ready inside Prompt Launcher."
+                        DaylightStatusPill(
+                            label =
+                                "Ready",
+                            kind =
+                                DaylightPillKind.READY
+                        )
 
                     !smsRoleAvailable ->
-                        "Default SMS is unavailable on this device. You can continue setup."
+                        DaylightStatusPill(
+                            label =
+                                "Unavailable",
+                            kind =
+                                DaylightPillKind.NEUTRAL
+                        )
 
                     else ->
-                        "Android will ask which app should handle SMS."
-                },
-            color =
-                Color(0xFF666666),
-            fontSize =
-                12.sp,
-            lineHeight =
-                15.5.sp,
-            fontFamily =
-                PoppinsFamily
-        )
+                        DaylightStatusPill(
+                            label =
+                                "Not set",
+                            kind =
+                                DaylightPillKind.NEUTRAL
+                        )
+                }
+            }
+        }
 
         if (
             !smsReady &&
             smsRoleAvailable
         ) {
-
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        8.dp
-                    )
+            DaylightOnboardingNote(
+                text =
+                    "Sideloaded: if SMS access is denied, open app settings, tap ⋮ → Allow restricted settings, then come back and choose Prompt Launcher again."
             )
 
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .border(
-                            width =
-                                1.dp,
-                            color =
-                                Color(0xFF2D2D2D),
-                            shape =
-                                RoundedCornerShape(
-                                    8.dp
-                                )
-                        )
-                        .padding(
-                            horizontal =
-                                8.dp,
-                            vertical =
-                                6.dp
-                        )
-            ) {
-
-                Column {
-
-                    Text(
-                        text =
-                            "SIDELOADED BETA",
-                        color =
-                            Color(0xFFFF6438),
-                        fontSize =
-                            11.sp,
-                        fontFamily =
-                            PoppinsFamily,
-                        fontWeight =
-                            FontWeight.Bold
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                3.dp
-                            )
-                    )
-
-                    Text(
-                        text =
-                            "If SMS access is denied: open app settings, tap ⋮ > Allow restricted settings, then return here and choose Prompt Launcher again.",
-                        color =
-                            Color(0xFF777777),
-                        fontSize =
-                            10.5.sp,
-                        lineHeight =
-                            13.sp,
-                        fontFamily =
-                            PoppinsFamily
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                5.dp
-                            )
-                    )
-
-                    Text(
-                        text =
-                            "OPEN APP SETTINGS →",
-                        color =
-                            Color(0xFFFF6438),
-                        fontSize =
-                            11.5.sp,
-                        lineHeight =
-                            13.sp,
-                        fontFamily =
-                            PoppinsFamily,
-                        fontWeight =
-                            FontWeight.Bold,
-                        maxLines =
-                            1,
-                        modifier =
-                            Modifier
-                                .clickable {
-                                    onOpenAppSettings()
-                                }
-                                .padding(
-                                    vertical =
-                                        1.dp
-                                )
-                    )
-                }
-            }
+            DaylightOnboardingLink(
+                text =
+                    "Open app settings →",
+                onClick =
+                    onOpenAppSettings
+            )
         }
     }
 }
 
-
+/*
+ * TASKS (D-Tasks)
+ *
+ * Two cards: Google Tasks with a connect pill, and Todoist with its
+ * token field and Save.
+ */
 @Composable
 private fun TasksSetupStep(
     provider: TaskProvider,
@@ -2418,1066 +2237,366 @@ private fun TasksSetupStep(
     googleTasksAuthorizing: Boolean,
     taskSetupMessage: String?,
     todoistToken: String,
+    todoistSaved: Boolean,
     onTodoistTokenChange: (String) -> Unit,
-    onConnectGoogleTasks: () -> Unit
+    onConnectGoogleTasks: () -> Unit,
+    onSaveTodoist: () -> Unit
 ) {
-    Column {
-        Text(
-            text =
-                "TASKS",
-            color =
-                Color(0xFFF1F1F1),
-            fontSize =
-                26.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
+    Column(
+        modifier =
+            Modifier.fillMaxWidth(),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                10.dp
+            )
+    ) {
+
+        DaylightOnboardingTitle(
+            title =
+                "Where should + go?",
+            subtitle =
+                "Type +buy milk and it lands in your to-do app. Connect one or both.",
+            highlight =
+                "+buy milk"
         )
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    4.dp
-                )
-        )
+        DaylightCard(
+            horizontalPadding =
+                11.5.dp,
+            verticalPadding =
+                11.5.dp
+        ) {
+            DaylightServiceHeader(
+                icon =
+                    DaylightTileIcon.CHECK_SQUARE,
+                tint =
+                    AccentOrange,
+                title =
+                    "Google Tasks",
+                detail =
+                    "Sign in with Google"
+            ) {
+                when {
+                    googleTasksAuthorizing ->
+                        DaylightStatusPill(
+                            label =
+                                "Connecting",
+                            kind =
+                                DaylightPillKind.NEUTRAL
+                        )
 
-        Text(
-            text =
-                "Choose where Prompt should save your to-dos.",
-            color =
-                Color(0xFF999999),
-            fontSize =
-                13.5.sp,
-            lineHeight =
-                18.sp,
-            fontFamily =
-                PoppinsFamily
-        )
+                    googleTasksConnected &&
+                            provider ==
+                            TaskProvider.GOOGLE_TASKS ->
+                        DaylightStatusPill(
+                            label =
+                                "Connected",
+                            kind =
+                                DaylightPillKind.READY
+                        )
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    7.dp
-                )
-        )
+                    /*
+                     * Connected earlier but Todoist is the current
+                     * default: one tap makes Google Tasks the default
+                     * again.
+                     */
+                    googleTasksConnected ->
+                        DaylightStatusPill(
+                            label =
+                                "Use",
+                            kind =
+                                DaylightPillKind.NEUTRAL,
+                            onClick =
+                                onConnectGoogleTasks
+                        )
 
-        GoogleTasksCompactCard(
-            provider =
-                provider,
-            connected =
-                googleTasksConnected,
-            authorizing =
-                googleTasksAuthorizing,
-            onConnect =
-                onConnectGoogleTasks
-        )
+                    else ->
+                        DaylightStatusPill(
+                            label =
+                                "Connect",
+                            kind =
+                                DaylightPillKind.ACCENT,
+                            onClick =
+                                onConnectGoogleTasks
+                        )
+                }
+            }
+        }
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    6.dp
-                )
-        )
+        DaylightCard(
+            horizontalPadding =
+                11.5.dp,
+            verticalPadding =
+                11.5.dp
+        ) {
+            DaylightServiceHeader(
+                icon =
+                    DaylightTileIcon.LINES,
+                tint =
+                    ProductivityRed,
+                title =
+                    "Todoist",
+                detail =
+                    "Settings → Integrations → Developer"
+            ) {
+                if (
+                    provider ==
+                    TaskProvider.TODOIST ||
+                    todoistSaved
+                ) {
+                    DaylightStatusPill(
+                        label =
+                            "Connected",
+                        kind =
+                            DaylightPillKind.READY
+                    )
+                }
+            }
 
-        TodoistExpandedCard(
-            provider =
-                provider,
-            token =
-                todoistToken,
-            onTokenChange =
-                onTodoistTokenChange
-        )
+            Spacer(
+                modifier =
+                    Modifier.height(
+                        8.dp
+                    )
+            )
+
+            DaylightSecretField(
+                value =
+                    todoistToken,
+                onValueChange =
+                    onTodoistTokenChange,
+                placeholder =
+                    "Paste your API token",
+                actionLabel =
+                    "Save",
+                onAction =
+                    onSaveTodoist
+            )
+        }
 
         if (
             !taskSetupMessage.isNullOrBlank()
         ) {
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        4.dp
-                    )
-            )
-
-            Text(
+            DaylightOnboardingNote(
                 text =
                     taskSetupMessage,
                 color =
-                    if (
-                        taskSetupMessage.equals(
-                            "CONNECTED",
-                            ignoreCase = true
-                        )
-                    ) {
-                        Color(0xFFF1F1F1)
-                    } else {
-                        Color(0xFFFF6438)
-                    },
-                fontSize =
-                    10.5.sp,
-                fontFamily =
-                    PoppinsFamily,
-                fontWeight =
-                    FontWeight.Bold
+                    ProductivityRed
             )
         }
+
+        DaylightOnboardingNote(
+            text =
+                "Connected both? Chips above the prompt let you switch while you type."
+        )
     }
 }
 
-@Composable
-private fun GoogleTasksCompactCard(
-    provider: TaskProvider,
-    connected: Boolean,
-    authorizing: Boolean,
-    onConnect: () -> Unit
-) {
-    /*
-     * Sized by its content. The old fixed 60.dp was measured against
-     * smaller type and clipped the "RECOMMENDED" line underneath the
-     * title once the onboarding text scaled up.
-     */
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(
-                    min = 60.dp
-                )
-                .border(
-                    width =
-                        1.dp,
-                    color =
-                        if (
-                            provider ==
-                            TaskProvider.GOOGLE_TASKS
-                        ) {
-                            Color(0xFF666666)
-                        } else {
-                            Color(0xFF252525)
-                        },
-                    shape =
-                        RoundedCornerShape(
-                            9.dp
-                        )
-                )
-                .clickable(
-                    enabled =
-                        !authorizing
-                ) {
-                    onConnect()
-                }
-                .padding(
-                    horizontal =
-                        12.dp,
-                    vertical =
-                        6.dp
-                )
-    ) {
-        Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-            horizontalArrangement =
-                Arrangement.SpaceBetween,
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text =
-                        "GOOGLE TASKS",
-                    color =
-                        Color(0xFFF1F1F1),
-                    fontSize =
-                        14.sp,
-                    fontFamily =
-                        PoppinsFamily,
-                    fontWeight =
-                        FontWeight.Bold
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(
-                            2.dp
-                        )
-                )
-
-                Text(
-                    text =
-                        if (
-                            provider ==
-                            TaskProvider.GOOGLE_TASKS &&
-                            connected
-                        ) {
-                            "CONNECTED"
-                        } else {
-                            "RECOMMENDED"
-                        },
-                    color =
-                        if (
-                            provider ==
-                            TaskProvider.GOOGLE_TASKS &&
-                            connected
-                        ) {
-                            Color(0xFFF1F1F1)
-                        } else {
-                            Color(0xFFFF6438)
-                        },
-                    fontSize =
-                        10.5.sp,
-                    fontFamily =
-                        PoppinsFamily,
-                    fontWeight =
-                        FontWeight.Bold
-                )
-            }
-
-            Text(
-                text =
-                    when {
-                        authorizing ->
-                            "CONNECTING"
-
-                        provider ==
-                                TaskProvider.GOOGLE_TASKS &&
-                                connected ->
-                            "CONNECTED"
-
-                        else ->
-                            "CONNECT"
-                    },
-                color =
-                    if (
-                        provider ==
-                        TaskProvider.GOOGLE_TASKS &&
-                        connected
-                    ) {
-                        Color(0xFFF1F1F1)
-                    } else {
-                        Color(0xFFFF6438)
-                    },
-                fontSize =
-                    11.5.sp,
-                fontFamily =
-                    PoppinsFamily,
-                fontWeight =
-                    FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-private fun TodoistExpandedCard(
-    provider: TaskProvider,
-    token: String,
-    onTokenChange: (String) -> Unit
-) {
-    /*
-     * Sized by its content rather than a fixed height. The old 92.dp
-     * was measured against a monospace title; Poppins sits in a taller
-     * line box, which pushed the token field past the bottom border.
-     */
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .border(
-                    width =
-                        1.dp,
-                    color =
-                        if (
-                            provider ==
-                            TaskProvider.TODOIST
-                        ) {
-                            Color(0xFF666666)
-                        } else {
-                            Color(0xFF252525)
-                        },
-                    shape =
-                        RoundedCornerShape(
-                            9.dp
-                        )
-                )
-                .padding(
-                    horizontal =
-                        10.dp,
-                    vertical =
-                        8.dp
-                )
-    ) {
-        Column(
-            modifier =
-                Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier =
-                    Modifier.fillMaxWidth(),
-                horizontalArrangement =
-                    Arrangement.SpaceBetween,
-                verticalAlignment =
-                    Alignment.CenterVertically
-            ) {
-                Text(
-                    text =
-                        "TODOIST",
-                    color =
-                        Color(0xFFF1F1F1),
-                    fontSize =
-                        14.sp,
-                    fontFamily =
-                        PoppinsFamily,
-                    fontWeight =
-                        FontWeight.Bold
-                )
-
-                Text(
-                    text =
-                        if (
-                            provider ==
-                            TaskProvider.TODOIST
-                        ) {
-                            "CONNECTED"
-                        } else {
-                            "OPTIONAL"
-                        },
-                    color =
-                        if (
-                            provider ==
-                            TaskProvider.TODOIST
-                        ) {
-                            Color(0xFFF1F1F1)
-                        } else {
-                            Color(0xFF707070)
-                        },
-                    fontSize =
-                        11.sp,
-                    fontFamily =
-                        PoppinsFamily,
-                    fontWeight =
-                        FontWeight.Bold
-                )
-            }
-
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        6.dp
-                    )
-            )
-
-            CompactSecretField(
-                value =
-                    token,
-                onValueChange =
-                    onTokenChange,
-                placeholder =
-                    "PASTE TODOIST API TOKEN"
-            )
-        }
-    }
-}
-
+/*
+ * ASSISTANT
+ *
+ * No mockup of its own; a service card with the key field inside, like
+ * the Todoist card.
+ */
 @Composable
 private fun GeminiSetupStep(
     apiKey: String,
     onApiKeyChange: (String) -> Unit,
     saved: Boolean
 ) {
-    Column {
-        Text(
+    Column(
+        modifier =
+            Modifier.fillMaxWidth(),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                10.dp
+            )
+    ) {
+
+        DaylightOnboardingTitle(
+            title =
+                "Add an assistant",
+            subtitle =
+                "Optional. A Gemini API key answers anything you start with ?",
+            highlight =
+                "?"
+        )
+
+        DaylightCard(
+            horizontalPadding =
+                11.5.dp,
+            verticalPadding =
+                11.5.dp
+        ) {
+            DaylightServiceHeader(
+                icon =
+                    DaylightTileIcon.QUESTION,
+                tint =
+                    AccentOrange,
+                title =
+                    "Gemini",
+                detail =
+                    "Create a key in Google AI Studio"
+            ) {
+                if (
+                    saved
+                ) {
+                    DaylightStatusPill(
+                        label =
+                            "Key saved",
+                        kind =
+                            DaylightPillKind.READY
+                    )
+                } else {
+                    DaylightStatusPill(
+                        label =
+                            "Optional",
+                        kind =
+                            DaylightPillKind.NEUTRAL
+                    )
+                }
+            }
+
+            Spacer(
+                modifier =
+                    Modifier.height(
+                        8.dp
+                    )
+            )
+
+            DaylightSecretField(
+                value =
+                    apiKey,
+                onValueChange =
+                    onApiKeyChange,
+                placeholder =
+                    "Paste your API key"
+            )
+        }
+
+        DaylightOnboardingNote(
             text =
-                "AI ASSISTANT",
-            color =
-                Color(0xFFF1F1F1),
-            fontSize =
-                26.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    6.dp
-                )
-        )
-
-        Text(
-            text =
-                "Optional. Add a Gemini API key to power Prompt Launcher with tasteful AI integration.",
-            color =
-                Color(0xFF999999),
-            fontSize =
-                14.sp,
-            lineHeight =
-                20.sp,
-            fontFamily =
-                PoppinsFamily
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    10.dp
-                )
-        )
-
-        ConnectionStatusRow(
-            label =
-                "GEMINI",
-            ready =
-                saved,
-            readyText =
-                "KEY SAVED"
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    12.dp
-                )
-        )
-
-        SetupSecretField(
-            value =
-                apiKey,
-            onValueChange =
-                onApiKeyChange,
-            placeholder =
-                "PASTE GEMINI API KEY"
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    9.dp
-                )
-        )
-
-        Text(
-            text =
-                "Create your key in Google AI Studio.\n\n" +
-                        "Your question goes straight from this phone to Google Gemini with your key. " +
-                        "Prompt Launcher has no server. Calendar, texts and mail are NOT sent unless you " +
-                        "turn each one on later with the geminisetup command, which lists exactly what each sends.",
-            color =
-                Color(0xFF5F5F5F),
-            fontSize =
-                12.sp,
-            lineHeight =
-                17.sp,
-            fontFamily =
-                PoppinsFamily
+                "Your question goes straight from this phone to Google Gemini with your key. " +
+                        "Prompt Launcher has no server. Calendar, texts and mail are not sent unless you " +
+                        "turn each one on later with the geminisetup command, which lists exactly what each sends."
         )
     }
 }
 
+/*
+ * READY (D-Ready)
+ *
+ * A two-column grid of the command characters, then Start prompting.
+ */
 @Composable
 private fun ReadyStep(
     geminiReady: Boolean,
     weatherPermissionReady: Boolean,
     weatherSnapshot: WeatherSnapshot?
 ) {
-    Column {
-        StepTitle(
+
+    val commands =
+        listOf(
+            Triple("@", "Text someone", false),
+            Triple("/", "Call", false),
+            Triple(":", "Add an event", false),
+            Triple("+", "Add a to-do", false),
+            Triple("\"", "Write a note", false),
+            Triple("!", "Timer, !! alarm", false),
+            Triple("?", "Ask the assistant", false),
+            Triple("abc", "Search or open an app", true)
+        )
+
+    Column(
+        modifier =
+            Modifier.fillMaxWidth(),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                10.dp
+            )
+    ) {
+
+        DaylightOnboardingTitle(
             title =
-                "YOU’RE READY",
-            description =
-                "The prompt is the fastest way around your phone."
+                "You're set.",
+            subtitle =
+                "Start typing anywhere on home. The first character picks the action."
         )
 
-        Spacer(
+        Column(
             modifier =
-                Modifier.height(
-                    12.dp
+                Modifier.fillMaxWidth(),
+            verticalArrangement =
+                Arrangement.spacedBy(
+                    6.5.dp
                 )
-        )
-
-        CommandPreviewRow(
-            command =
-                ".",
-            action =
-                "apps"
-        )
-
-        CommandPreviewRow(
-            command =
-                "@",
-            action =
-                "message"
-        )
-
-        CommandPreviewRow(
-            command =
-                "/",
-            action =
-                "call"
-        )
-
-        CommandPreviewRow(
-            command =
-                ":",
-            action =
-                "event"
-        )
-
-        CommandPreviewRow(
-            command =
-                "+",
-            action =
-                "to do"
-        )
-
-        CommandPreviewRow(
-            command =
-                "?",
-            action =
-                "assistant"
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    9.dp
+        ) {
+            commands
+                .chunked(
+                    2
                 )
-        )
+                .forEach { pair ->
+
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(
+                                    IntrinsicSize.Min
+                                ),
+                        horizontalArrangement =
+                            Arrangement.spacedBy(
+                                6.5.dp
+                            )
+                    ) {
+                        pair.forEach { (symbol, label, neutral) ->
+                            DaylightCommandCard(
+                                symbol =
+                                    symbol,
+                                label =
+                                    label,
+                                neutral =
+                                    neutral,
+                                modifier =
+                                    Modifier
+                                        .weight(
+                                            1f
+                                        )
+                                        .fillMaxHeight()
+                            )
+                        }
+                    }
+                }
+        }
 
         if (
             weatherSnapshot != null
         ) {
-            Text(
+            DaylightOnboardingNote(
                 text =
-                    "Weather ready.",
-                color =
-                    Color(0xFF666666),
-                fontSize =
-                    12.sp,
-                fontFamily =
-                    PoppinsFamily
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        5.dp
-                    )
+                    "Weather is ready."
             )
         } else if (
             weatherPermissionReady
         ) {
-            Text(
+            DaylightOnboardingNote(
                 text =
-                    "Weather location enabled. Prompt will keep trying.",
-                color =
-                    Color(0xFF666666),
-                fontSize =
-                    12.sp,
-                fontFamily =
-                    PoppinsFamily
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        5.dp
-                    )
+                    "Weather location is on. Prompt Launcher will keep trying."
             )
         }
 
-        Text(
-            text =
-                "More commands are available from the help card inside Prompt.",
-            color =
-                Color(0xFF555555),
-            fontSize =
-                12.sp,
-            lineHeight =
-                17.sp,
-            fontFamily =
-                PoppinsFamily
-        )
-    }
-}
-
-@Composable
-private fun StepTitle(
-    title: String,
-    description: String
-) {
-    Text(
-        text =
-            title,
-        color =
-            Color(0xFFF1F1F1),
-        fontSize =
-            27.sp,
-        fontFamily =
-            PoppinsFamily,
-        fontWeight =
-            FontWeight.Bold
-    )
-
-    Spacer(
-        modifier =
-            Modifier.height(
-                10.dp
+        if (
+            !geminiReady
+        ) {
+            DaylightOnboardingNote(
+                text =
+                    "Add a Gemini key anytime with the geminisetup command."
             )
-    )
+        }
 
-    Text(
-        text =
-            description,
-        color =
-            Color(0xFF999999),
-        fontSize =
-            15.sp,
-        lineHeight =
-            22.sp,
-        fontFamily =
-            PoppinsFamily
-    )
-}
-
-@Composable
-private fun ConnectionStatusRow(
-    label: String,
-    ready: Boolean,
-    readyText: String
-) {
-    Row(
-        modifier =
-            Modifier.fillMaxWidth(),
-        horizontalArrangement =
-            Arrangement.SpaceBetween,
-        verticalAlignment =
-            Alignment.CenterVertically
-    ) {
-        Text(
+        DaylightOnboardingNote(
             text =
-                label,
-            color =
-                Color(0xFF999999),
-            fontSize =
-                14.sp,
-            fontFamily =
-                PoppinsFamily
-        )
-
-        Text(
-            text =
-                if (
-                    ready
-                ) {
-                    readyText
-                } else {
-                    "OPTIONAL"
-                },
-            color =
-                if (
-                    ready
-                ) {
-                    Color(0xFFF1F1F1)
-                } else {
-                    Color(0xFF707070)
-                },
-            fontSize =
-                12.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun CompactSecretField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String
-) {
-    /*
-     * A minimum rather than a fixed height, with padding inside the
-     * box. Poppins sits in a taller line box than the monospace this
-     * was measured against, which clipped the token text top and
-     * bottom.
-     */
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(
-                    min = 38.dp
-                )
-                .background(
-                    color =
-                        Color(0xFF1A1A1A),
-                    shape =
-                        RoundedCornerShape(
-                            6.dp
-                        )
-                )
-                .border(
-                    width =
-                        1.dp,
-                    color =
-                        Color(0xFF383838),
-                    shape =
-                        RoundedCornerShape(
-                            6.dp
-                        )
-                )
-                .padding(
-                    vertical =
-                        6.dp
-                ),
-        contentAlignment =
-            Alignment.Center
-    ) {
-        BasicTextField(
-            value =
-                value,
-            onValueChange = {
-                val cleaned =
-                    it.replace(
-                        "\n",
-                        ""
-                    )
-
-                if (
-                    cleaned.length <=
-                    512
-                ) {
-                    onValueChange(
-                        cleaned
-                    )
-                }
-            },
-            singleLine =
-                true,
-            visualTransformation =
-                PasswordVisualTransformation(),
-            textStyle =
-                TextStyle(
-                    color =
-                        Color(0xFFF1F1F1),
-                    fontSize =
-                        12.5.sp,
-                    lineHeight =
-                        17.sp,
-                    fontFamily =
-                        PoppinsFamily
-                ),
-            cursorBrush =
-                SolidColor(
-                    Color(0xFFFF6438)
-                ),
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        horizontal =
-                            9.dp
-                    ),
-            decorationBox = {
-                    innerTextField ->
-
-                Box(
-                    modifier =
-                        Modifier.fillMaxWidth()
-                ) {
-                    if (
-                        value.isBlank()
-                    ) {
-                        Text(
-                            text =
-                                placeholder,
-                            color =
-                                Color(0xFF666666),
-                            fontSize =
-                                11.5.sp,
-                            lineHeight =
-                                15.5.sp,
-                            fontFamily =
-                                PoppinsFamily,
-                            fontWeight =
-                                FontWeight.Bold,
-                            modifier =
-                                Modifier.align(
-                                    Alignment.Center
-                                )
-                        )
-                    }
-
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal =
-                                        1.dp
-                                ),
-                        contentAlignment =
-                            Alignment.CenterStart
-                    ) {
-                        innerTextField()
-                    }
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun SetupSecretField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String
-) {
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .height(
-                    42.dp
-                )
-                .background(
-                    color =
-                        Color(0xFF1A1A1A),
-                    shape =
-                        RoundedCornerShape(
-                            8.dp
-                        )
-                )
-                .border(
-                    width =
-                        1.dp,
-                    color =
-                        Color(0xFF383838),
-                    shape =
-                        RoundedCornerShape(
-                            8.dp
-                        )
-                ),
-        contentAlignment =
-            Alignment.Center
-    ) {
-        BasicTextField(
-            value =
-                value,
-            onValueChange = {
-                val cleaned =
-                    it.replace(
-                        "\n",
-                        ""
-                    )
-
-                if (
-                    cleaned.length <=
-                    512
-                ) {
-                    onValueChange(
-                        cleaned
-                    )
-                }
-            },
-            singleLine =
-                true,
-            visualTransformation =
-                PasswordVisualTransformation(),
-            textStyle =
-                TextStyle(
-                    color =
-                        Color(0xFFF1F1F1),
-                    fontSize =
-                        14.sp,
-                    fontFamily =
-                        PoppinsFamily
-                ),
-            cursorBrush =
-                SolidColor(
-                    Color(0xFFFF6438)
-                ),
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(
-                        horizontal =
-                            12.dp
-                    ),
-            decorationBox = {
-                    innerTextField ->
-
-                Box(
-                    modifier =
-                        Modifier.fillMaxWidth()
-                ) {
-                    if (
-                        value.isBlank()
-                    ) {
-                        Text(
-                            text =
-                                placeholder,
-                            color =
-                                Color(0xFF666666),
-                            fontSize =
-                                12.sp,
-                            fontFamily =
-                                PoppinsFamily,
-                            fontWeight =
-                                FontWeight.Bold,
-                            modifier =
-                                Modifier.align(
-                                    Alignment.Center
-                                )
-                        )
-                    }
-
-                    Box(
-                        modifier =
-                            Modifier.fillMaxSize(),
-                        contentAlignment =
-                            Alignment.CenterStart
-                    ) {
-                        innerTextField()
-                    }
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun CommandPreviewRow(
-    command: String,
-    action: String
-) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(
-                    vertical =
-                        3.dp
-                ),
-        verticalAlignment =
-            Alignment.CenterVertically
-    ) {
-        Text(
-            text =
-                command,
-            color =
-                Color(0xFFFF6438),
-            fontSize =
-                17.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold,
-            modifier =
-                Modifier.fillMaxWidth(
-                    0.22f
-                )
-        )
-
-        Text(
-            text =
-                action,
-            color =
-                Color(0xFF999999),
-            fontSize =
-                13.5.sp,
-            fontFamily =
-                PoppinsFamily
-        )
-    }
-}
-
-@Composable
-private fun SetupPrimaryButton(
-    text: String,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .background(
-                    color =
-                        Color(0xFFF1F1F1),
-                    shape =
-                        RoundedCornerShape(
-                            10.dp
-                        )
-                )
-                .clickable {
-                    onClick()
-                }
-                .padding(
-                    vertical =
-                        11.dp
-                ),
-        contentAlignment =
-            Alignment.Center
-    ) {
-        Text(
-            text =
-                text,
-            color =
-                Color.Black,
-            fontSize =
-                14.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun SetupSecondaryButton(
-    text: String,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .border(
-                    width =
-                        1.dp,
-                    color =
-                        Color(0xFF242424),
-                    shape =
-                        RoundedCornerShape(
-                            10.dp
-                        )
-                )
-                .clickable {
-                    onClick()
-                }
-                .padding(
-                    vertical =
-                        9.dp
-                ),
-        contentAlignment =
-            Alignment.Center
-    ) {
-        Text(
-            text =
-                text,
-            color =
-                Color(0xFF777777),
-            fontSize =
-                12.5.sp,
-            fontFamily =
-                PoppinsFamily,
-            fontWeight =
-                FontWeight.Bold
+                "More commands are in the help card inside Prompt Launcher."
         )
     }
 }
@@ -3591,11 +2710,11 @@ private fun getPromptLauncherVersionName(
 /*
  * APPEARANCE
  *
- * The last thing before the launcher opens, so the first screen the
+ * The last choice before the launcher opens, so the first screen the
  * user sees is already theirs. Writes straight through to the
- * settings store — the same values the settings screens edit later.
+ * settings store — the same values the settings screens edit later —
+ * and onboarding itself re-themes as each choice is made.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AppearanceSetupStep(
     settings: LauncherSettings,
@@ -3613,13 +2732,17 @@ private fun AppearanceSetupStep(
 
     val previewPalette =
         paletteFor(
-            settings.themeMode
+            effectiveThemeMode(
+                settings,
+                isSystemInDarkTheme()
+            )
         )
 
     val previewFont =
         when (
             settings.interfaceFont
         ) {
+            LauncherInterfaceFont.BRICOLAGE -> BricolageFamily
             LauncherInterfaceFont.MONO -> FontFamily.Monospace
             LauncherInterfaceFont.SANS -> FontFamily.SansSerif
             LauncherInterfaceFont.SERIF -> FontFamily.Serif
@@ -3643,17 +2766,20 @@ private fun AppearanceSetupStep(
             )
             ?: previewPalette.secondaryText
 
-    Column {
+    Column(
+        modifier =
+            Modifier.fillMaxWidth(),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                10.dp
+            )
+    ) {
 
-        StepTitle(
+        DaylightOnboardingTitle(
             title =
-                "MAKE IT YOURS",
-            description =
-                "Pick a look. You can change any of this later in settings."
-        )
-
-        Spacer(
-            modifier = Modifier.height(12.dp)
+                "Make it yours",
+            subtitle =
+                "Pick a look. You can change any of this later in Settings."
         )
 
         /*
@@ -3666,13 +2792,13 @@ private fun AppearanceSetupStep(
                 Modifier
                     .fillMaxWidth()
                     .background(
-                        previewPalette.background,
-                        RoundedCornerShape(11.dp)
+                        previewPalette.surface,
+                        RoundedCornerShape(14.dp)
                     )
                     .border(
-                        0.8.dp,
+                        0.75.dp,
                         previewPalette.border,
-                        RoundedCornerShape(11.dp)
+                        RoundedCornerShape(14.dp)
                     )
                     .padding(
                         horizontal = 12.dp,
@@ -3681,18 +2807,18 @@ private fun AppearanceSetupStep(
         ) {
 
             Text(
-                text = "monday, sep 28",
+                text = "Monday, Sep 28",
                 color = previewPrimary,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 lineHeight = 14.sp,
                 fontFamily = previewFont,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.SemiBold
             )
 
             Text(
-                text = "cloudy, 84°",
+                text = "Cloudy, 84°",
                 color = previewSecondary,
-                fontSize = 11.sp,
+                fontSize = 9.5.sp,
                 lineHeight = 12.sp,
                 fontFamily = previewFont
             )
@@ -3702,149 +2828,162 @@ private fun AppearanceSetupStep(
             )
 
             Text(
-                text = "> message shan",
+                text = "@shan running late",
                 color = previewAccent,
-                fontSize = 12.sp,
+                fontSize = 10.5.sp,
                 lineHeight = 13.sp,
                 fontFamily = previewFont,
                 fontWeight = FontWeight.Medium
             )
         }
 
-        Spacer(
-            modifier = Modifier.height(12.dp)
-        )
+        DaylightCard {
 
-        OnboardingChoiceRow(
-            accent = previewAccent,
-            font = previewFont,
-            label = "accent",
-            options =
-                LauncherAccent.entries.map {
-                    it.name.lowercase()
-                },
-            selectedIndex =
-                LauncherAccent.entries.indexOf(
-                    settings.accent
-                ),
-            onSelected = { index ->
-                onSettingsChange(
-                    settings.copy(
-                        accent =
-                            LauncherAccent.entries[index]
+            OnboardingChoiceSection(
+                label = "Accent",
+                options =
+                    LauncherAccent.entries.map {
+                        onboardingOptionLabel(it.name)
+                    },
+                selectedIndex =
+                    LauncherAccent.entries.indexOf(
+                        settings.accent
+                    ),
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            accent =
+                                LauncherAccent.entries[index]
+                        )
                     )
-                )
-            }
-        )
+                }
+            )
 
-        Spacer(
-            modifier = Modifier.height(11.dp)
-        )
+            DaylightRowDivider()
 
-        OnboardingChoiceRow(
-            accent = previewAccent,
-            font = previewFont,
-            label = "theme",
-            options =
-                LauncherThemeMode.entries.map {
-                    it.name.lowercase()
-                },
-            selectedIndex =
-                LauncherThemeMode.entries.indexOf(
-                    settings.themeMode
-                ),
-            onSelected = { index ->
-                onSettingsChange(
-                    settings.copy(
-                        themeMode =
-                            LauncherThemeMode.entries[index]
+            OnboardingChoiceSection(
+                label = "Theme",
+                options =
+                    listOf("Auto") +
+                            LauncherThemeMode.entries.map {
+                                onboardingOptionLabel(it.name)
+                            },
+                selectedIndex =
+                    if (
+                        settings.followSystemTheme
+                    ) {
+                        0
+                    } else {
+                        LauncherThemeMode.entries.indexOf(
+                            settings.themeMode
+                        ) + 1
+                    },
+                onSelected = { index ->
+                    onSettingsChange(
+                        if (
+                            index == 0
+                        ) {
+                            settings.copy(
+                                followSystemTheme = true
+                            )
+                        } else {
+                            settings.copy(
+                                followSystemTheme = false,
+                                themeMode =
+                                    LauncherThemeMode.entries[index - 1]
+                            )
+                        }
                     )
-                )
-            }
-        )
+                }
+            )
 
-        Spacer(
-            modifier = Modifier.height(11.dp)
-        )
+            DaylightRowDivider()
 
-        OnboardingChoiceRow(
-            accent = previewAccent,
-            font = previewFont,
-            label = "font",
-            options =
-                LauncherInterfaceFont.entries.map {
-                    it.name.lowercase()
-                },
-            selectedIndex =
-                LauncherInterfaceFont.entries.indexOf(
-                    settings.interfaceFont
-                ),
-            onSelected = { index ->
-                onSettingsChange(
-                    settings.copy(
-                        interfaceFont =
-                            LauncherInterfaceFont.entries[index]
+            OnboardingChoiceSection(
+                label = "Font",
+                options =
+                    LauncherInterfaceFont.entries.map {
+                        onboardingOptionLabel(it.name)
+                    },
+                selectedIndex =
+                    LauncherInterfaceFont.entries.indexOf(
+                        settings.interfaceFont
+                    ),
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            interfaceFont =
+                                LauncherInterfaceFont.entries[index]
+                        )
                     )
-                )
-            }
-        )
+                }
+            )
 
-        Spacer(
-            modifier = Modifier.height(11.dp)
-        )
+            DaylightRowDivider()
 
-        OnboardingChoiceRow(
-            accent = previewAccent,
-            font = previewFont,
-            label = "text",
-            options =
-                LauncherTextColor.entries.map {
-                    it.name.lowercase()
-                },
-            selectedIndex =
-                LauncherTextColor.entries.indexOf(
-                    settings.textColor
-                ),
-            onSelected = { index ->
-                onSettingsChange(
-                    settings.copy(
-                        textColor =
-                            LauncherTextColor.entries[index]
+            OnboardingChoiceSection(
+                label = "Text",
+                options =
+                    LauncherTextColor.entries.map {
+                        onboardingOptionLabel(it.name)
+                    },
+                selectedIndex =
+                    LauncherTextColor.entries.indexOf(
+                        settings.textColor
+                    ),
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            textColor =
+                                LauncherTextColor.entries[index]
+                        )
                     )
-                )
-            }
-        )
+                }
+            )
+        }
     }
 }
 
+/*
+ * "COBALT" -> "Cobalt".
+ */
+private fun onboardingOptionLabel(
+    name: String
+): String =
+    name
+        .lowercase()
+        .replaceFirstChar {
+            it.uppercase()
+        }
 
 /*
- * Wrapping chips, because seven accents will not fit on one line at
- * onboarding's larger type.
+ * A small spaced-capitals label over wrapping Daylight chips, because
+ * eight accents will not fit on one line.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OnboardingChoiceRow(
-    accent: Color,
-    font: FontFamily,
+private fun OnboardingChoiceSection(
     label: String,
     options: List<String>,
     selectedIndex: Int,
     onSelected: (Int) -> Unit
 ) {
 
-    Column {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    vertical = 9.dp
+                )
+    ) {
 
-        Text(
-            text = label,
-            color = Color(0xFF8A8A8A),
-            fontSize = 11.sp,
-            lineHeight = 11.sp,
-            fontFamily = font
+        DaylightSectionLabel(
+            text = label
         )
 
         Spacer(
-            modifier = Modifier.height(5.dp)
+            modifier = Modifier.height(6.dp)
         )
 
         FlowRow(
@@ -3856,54 +2995,13 @@ private fun OnboardingChoiceRow(
 
             options.forEachIndexed { index, option ->
 
-                val selected =
-                    index == selectedIndex
-
-                Box(
-                    modifier =
-                        Modifier
-                            .heightIn(min = 30.dp)
-                            .background(
-                                if (selected) {
-                                    accent
-                                } else {
-                                    Color(0xFF1C1C1C)
-                                },
-                                RoundedCornerShape(9.dp)
-                            )
-                            .border(
-                                0.8.dp,
-                                if (selected) {
-                                    accent
-                                } else {
-                                    Color(0xFF3A3A3A)
-                                },
-                                RoundedCornerShape(9.dp)
-                            )
-                            .clickable {
-                                onSelected(index)
-                            }
-                            .padding(
-                                horizontal = 11.dp,
-                                vertical = 6.dp
-                            ),
-                    contentAlignment = Alignment.Center
-                ) {
-
-                    Text(
-                        text = option,
-                        color =
-                            if (selected) {
-                                Color(0xFF101010)
-                            } else {
-                                Color(0xFFBDBDBD)
-                            },
-                        fontSize = 11.sp,
-                        lineHeight = 11.sp,
-                        fontFamily = font,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                DaylightChoiceChip(
+                    label = option,
+                    selected = index == selectedIndex,
+                    onClick = {
+                        onSelected(index)
+                    }
+                )
             }
         }
     }

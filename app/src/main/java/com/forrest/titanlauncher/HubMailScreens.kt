@@ -83,6 +83,14 @@ import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material.icons.outlined.Drafts
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
@@ -242,6 +250,14 @@ internal fun HubScreen(
         mutableStateOf<HubDisplayItem?>(null)
     }
 
+    /*
+     * Set when an email from another mail app is opened. Drives the
+     * Daylight mail preview card.
+     */
+    var mailPreviewItem by remember {
+        mutableStateOf<HubDisplayItem?>(null)
+    }
+
     val hubClearedStore =
         remember {
             HubClearedStore(
@@ -364,6 +380,21 @@ internal fun HubScreen(
                                         it.id
                                     }
                                     ?: return@mapNotNull null
+
+                            /*
+                             * Only texts still waiting on you: a
+                             * thread you've read, or where your reply
+                             * is the last word, leaves the hub.
+                             */
+                            if (
+                                !latest.incoming ||
+                                thread.none { message ->
+                                    message.incoming &&
+                                            !message.isRead
+                                }
+                            ) {
+                                return@mapNotNull null
+                            }
 
                             val contactName =
                                 if (
@@ -629,6 +660,17 @@ internal fun HubScreen(
                             notification.packageName !in
                                     mutedNotificationApps
                         }
+                        /*
+                         * A chat whose newest message is your own
+                         * reply has been answered, so it leaves the
+                         * hub. (Read chats go on their own: the
+                         * messaging app clears the notification.)
+                         */
+                        .filterNot { notification ->
+                            notification.messages
+                                .lastOrNull()
+                                ?.fromUser == true
+                        }
                         .map {
                                 notification ->
 
@@ -806,7 +848,7 @@ internal fun HubScreen(
             )
     }
 
-    val filteredItems =
+    val categoryItems =
         when (
             selectedCategory
         ) {
@@ -839,10 +881,117 @@ internal fun HubScreen(
                 }
         }
 
+    /*
+     * Daylight groups the hub into "now" (anything unread, or from the
+     * last two hours) and "earlier". Keyboard selection runs over one
+     * flat index across both sections, now first, so filteredItems is
+     * the two lists joined in display order.
+     */
+    val nowCutoff =
+        System.currentTimeMillis() -
+                TimeUnit.HOURS.toMillis(2)
+
+    val nowItems =
+        categoryItems.filter {
+            it.unread ||
+                    it.timestamp >= nowCutoff
+        }
+
+    val earlierItems =
+        categoryItems.filterNot {
+            it.unread ||
+                    it.timestamp >= nowCutoff
+        }
+
+    val filteredItems =
+        nowItems + earlierItems
+
+    val nowCount =
+        nowItems.size
+
+    /*
+     * Lazy list position of a row, counting the section headers.
+     * The first row of a section scrolls to its header instead, so
+     * the label stays in view.
+     */
+    fun lazyIndexFor(
+        index: Int
+    ): Int =
+        when {
+            index <= 0 -> 0
+            index < nowCount -> index + 1
+            index == nowCount -> nowCount + 1
+            else -> index + 2
+        }
+
     val newCount =
-        hubItems.count {
+        filteredItems.count {
             it.unread
         }
+
+    val hubSubtitleAccent: String
+    val hubSubtitleRest: String
+
+    if (
+        newCount == 0
+    ) {
+        hubSubtitleAccent = ""
+        hubSubtitleRest =
+            if (filteredItems.isEmpty()) "Nothing new" else "All caught up"
+    } else if (
+        selectedCategory == HubCategory.EMAIL
+    ) {
+        val emailApps =
+            filteredItems
+                .mapNotNull { item ->
+                    appNotifications
+                        .firstOrNull {
+                            it.key == item.notificationKey
+                        }
+                        ?.appName
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                }
+                .distinct()
+
+        hubSubtitleAccent =
+            if (newCount == 1) "1 new email" else "$newCount new emails"
+
+        hubSubtitleRest =
+            when (emailApps.size) {
+                0 -> ""
+                1 -> " in " + emailApps.first()
+                else -> " across " + emailApps.size + " apps"
+            }
+    } else {
+        val startOfToday =
+            java.util.Calendar
+                .getInstance()
+                .apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                .timeInMillis
+
+        val oldestUnread =
+            filteredItems
+                .filter {
+                    it.unread
+                }
+                .minOfOrNull {
+                    it.timestamp
+                }
+                ?: 0L
+
+        hubSubtitleAccent =
+            "$newCount new"
+
+        hubSubtitleRest =
+            if (oldestUnread >= startOfToday) " since this morning" else " waiting for you"
+    }
 
     LaunchedEffect(Unit) {
 
@@ -879,8 +1028,28 @@ internal fun HubScreen(
 
             listState
                 .animateScrollToItem(
-                    selectedIndex
+                    lazyIndexFor(
+                        selectedIndex
+                    )
                 )
+        }
+    }
+
+    /*
+     * Overlays take key focus while they are up; hand it back to the
+     * hub list once they close.
+     */
+    LaunchedEffect(
+        mailPreviewItem == null &&
+                callActionsItem == null
+    ) {
+        if (
+            mailPreviewItem == null &&
+            callActionsItem == null
+        ) {
+            runCatching {
+                focusRequester.requestFocus()
+            }
         }
     }
 
@@ -1030,18 +1199,16 @@ internal fun HubScreen(
                     )
                 } else {
                     /*
-                     * An email from another mail app: open it there.
+                     * An email from another mail app: show the
+                     * Daylight preview card, which hands the full
+                     * email to that app.
                      */
-                    item.notificationKey
-                        ?.let {
-                            NotificationCenter
-                                .openNotification(
-                                    key =
-                                        it,
-                                    context =
-                                        context
-                                )
-                        }
+                    if (
+                        item.notificationKey != null
+                    ) {
+                        mailPreviewItem =
+                            item
+                    }
                 }
             }
 
@@ -1109,9 +1276,9 @@ internal fun HubScreen(
                     )
                     .padding(
                         horizontal =
-                            10.dp,
+                            DaylightPageHorizontal,
                         vertical =
-                            7.dp
+                            DaylightPageVertical
                     )
                     .focusRequester(
                         focusRequester
@@ -1241,58 +1408,60 @@ internal fun HubScreen(
                     }
         ) {
 
+            /*
+             * Daylight header: big "Hub" title right of the camera, with
+             * the unread count for the current tab underneath.
+             */
             Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(start = CameraSafeStartPadding),
+                        .padding(start = DaylightCameraLane),
                 verticalAlignment =
-                    Alignment.CenterVertically
+                    Alignment.Top
             ) {
 
-                Text(
-                    text =
-                        "hub",
-                    color =
-                        PrimaryText,
-                    fontSize =
-                        34.sp,
-                    fontFamily =
-                        InterfaceFont,
-                    fontWeight =
-                        FontWeight.Bold,
-                    textDecoration =
-                        TextDecoration.Underline
-                )
-
-                Spacer(
+                Column(
                     modifier =
-                        Modifier.width(
-                            8.dp
-                        )
-                )
-
-                if (
-                    newCount > 0
+                        Modifier.weight(1f)
                 ) {
+
+                    Text(
+                        text = "Hub",
+                        color = PrimaryText,
+                        fontSize = 24.sp,
+                        lineHeight = 25.sp,
+                        letterSpacing = (-0.7).sp,
+                        fontFamily = InterfaceFont,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+
+                    Spacer(Modifier.height(2.dp))
+
                     Text(
                         text =
-                            "$newCount new",
-                        color =
-                            AccentOrange,
-                        fontSize =
-                            8.sp,
-                        fontFamily =
-                            InterfaceFont
+                            buildAnnotatedString {
+                                if (hubSubtitleAccent.isNotEmpty()) {
+                                    withStyle(
+                                        SpanStyle(
+                                            color = AccentOrange,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    ) {
+                                        append(hubSubtitleAccent)
+                                    }
+                                }
+                                append(hubSubtitleRest)
+                            },
+                        color = SecondaryText,
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        fontFamily = InterfaceFont,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-
-                Spacer(
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        )
-                )
 
                 /*
                  * Clears whatever the current tab is showing rather
@@ -1303,255 +1472,146 @@ internal fun HubScreen(
                     filteredItems.isNotEmpty()
                 ) {
 
+                    Spacer(Modifier.width(8.dp))
+
                     Text(
-                        text =
-                            "clear all",
-                        color =
-                            SecondaryText,
-                        fontSize =
-                            8.5.sp,
-                        fontFamily =
-                            InterfaceFont,
+                        text = "Clear all",
+                        color = SecondaryText,
+                        fontSize = 8.5.sp,
+                        lineHeight = 10.sp,
+                        fontFamily = InterfaceFont,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
                         modifier =
                             Modifier
+                                .padding(top = 4.dp)
+                                .background(
+                                    SurfaceBlack,
+                                    RoundedCornerShape(999.dp)
+                                )
                                 .clickable {
                                     clearItems(
                                         filteredItems
                                     )
                                 }
                                 .padding(
-                                    horizontal = 4.dp,
-                                    vertical = 3.dp
+                                    horizontal = 9.dp,
+                                    vertical = 4.dp
                                 )
                     )
                 }
             }
 
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        6.dp
-                    )
-            )
+            Spacer(Modifier.height(10.dp))
 
+            /*
+             * Text tabs; the selected one in full text colour with an
+             * accent underline the width of its label.
+             */
             Row(
                 modifier =
                     Modifier.fillMaxWidth(),
                 horizontalArrangement =
-                    Arrangement.spacedBy(
-                        10.dp
-                    )
+                    Arrangement.spacedBy(15.dp)
             ) {
 
-                HubCategory.entries.forEach {
-                        category ->
+                HubCategory.entries.forEach { category ->
 
                     val selected =
-                        category ==
-                                selectedCategory
+                        category == selectedCategory
 
                     val categoryLabel =
-                        when (
-                            category
-                        ) {
-
-                            HubCategory.ALL ->
-                                "all"
-
-                            HubCategory.MESSAGES ->
-                                "messages"
-
-                            HubCategory.CALLS ->
-                                "calls"
-
-                            HubCategory.EMAIL ->
-                                "email"
-
-                            HubCategory.NOTIFICATIONS ->
-                                "noti"
+                        when (category) {
+                            HubCategory.ALL -> "All"
+                            HubCategory.MESSAGES -> "Messages"
+                            HubCategory.CALLS -> "Calls"
+                            HubCategory.EMAIL -> "Email"
+                            HubCategory.NOTIFICATIONS -> "Noti"
                         }
 
-                    Box(
+                    Column(
                         modifier =
-                            Modifier.clickable {
+                            Modifier
+                                .width(IntrinsicSize.Max)
+                                .clickable {
 
-                                onSelectedCategoryChange(
-                                    category
-                                )
+                                    onSelectedCategoryChange(
+                                        category
+                                    )
 
-                                onSelectedIndexChange(
-                                    0
-                                )
-                            },
-                        contentAlignment =
-                            Alignment.Center
+                                    onSelectedIndexChange(
+                                        0
+                                    )
+                                }
                     ) {
+
                         Text(
-                            text =
-                                categoryLabel,
+                            text = categoryLabel,
                             color =
-                                if (selected) AccentOrange
-                                else TertiaryText,
-                            fontSize =
-                                9.5.sp,
-                            lineHeight =
-                                9.8.sp,
-                            fontFamily =
-                                InterfaceFont,
+                                if (selected) PrimaryText
+                                else SecondaryText,
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            fontFamily = InterfaceFont,
                             fontWeight =
-                                if (selected) FontWeight.Bold
-                                else FontWeight.Normal
+                                if (selected) FontWeight.SemiBold
+                                else FontWeight.Normal,
+                            maxLines = 1
                         )
 
-                        if (selected) {
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .offset(y = 3.dp)
-                                        .height(1.dp)
-                                        .width(22.dp)
-                                        .background(AccentOrange)
-                            )
-                        }
+                        Spacer(Modifier.height(5.dp))
+
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(1.6.dp)
+                                    .background(
+                                        if (selected) AccentOrange
+                                        else Color.Transparent
+                                    )
+                        )
                     }
                 }
             }
 
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        4.dp
-                    )
-            )
-
-            MinimalDivider()
-
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        4.dp
-                    )
-            )
+            Spacer(Modifier.height(10.dp))
 
             if (
                 !notificationAccessEnabled
             ) {
 
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(
-                                34.dp
-                            )
-                            .background(
-                                SurfaceBlack,
-                                RoundedCornerShape(
-                                    8.dp
+                HubPermissionBanner(
+                    text = "Notifications hidden · tap to allow notification access",
+                    onClick = {
+                        try {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
                                 )
                             )
-                            .border(
-                                0.75.dp,
-                                BorderGray,
-                                RoundedCornerShape(
-                                    8.dp
-                                )
-                            )
-                            .clickable {
-                                try {
-                                    context.startActivity(
-                                        Intent(
-                                            Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
-                                        )
-                                    )
-                                } catch (
-                                    _: Exception
-                                ) {
-                                }
-                            }
-                            .padding(
-                                horizontal =
-                                    8.dp
-                            ),
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-
-                    Text(
-                        text =
-                            "noti hidden · tap to allow notification access",
-                        color =
-                            AccentOrange,
-                        fontSize =
-                            7.sp,
-                        fontFamily =
-                            InterfaceFont
-                    )
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(
-                            4.dp
-                        )
+                        } catch (
+                            _: Exception
+                        ) {
+                        }
+                    }
                 )
+
+                Spacer(Modifier.height(6.dp))
             }
 
             if (
                 !hasCallLogPermission
             ) {
 
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(
-                                34.dp
-                            )
-                            .background(
-                                SurfaceBlack,
-                                RoundedCornerShape(
-                                    8.dp
-                                )
-                            )
-                            .border(
-                                0.75.dp,
-                                BorderGray,
-                                RoundedCornerShape(
-                                    8.dp
-                                )
-                            )
-                            .clickable {
-
-                                onRequestCallLogPermission()
-                            }
-                            .padding(
-                                horizontal =
-                                    8.dp
-                            ),
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-
-                    Text(
-                        text =
-                            "calls hidden · tap to allow call history",
-                        color =
-                            AccentOrange,
-                        fontSize =
-                            7.sp,
-                        fontFamily =
-                            InterfaceFont
-                    )
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(
-                            4.dp
-                        )
+                HubPermissionBanner(
+                    text = "Calls hidden · tap to allow call history",
+                    onClick = {
+                        onRequestCallLogPermission()
+                    }
                 )
+
+                Spacer(Modifier.height(6.dp))
             }
 
             if (
@@ -1593,49 +1653,32 @@ internal fun HubScreen(
                         ) {
 
                             Text(
-                                text =
-                                    "mail not connected",
-                                color =
-                                    TertiaryText,
-                                fontSize =
-                                    9.sp,
-                                fontFamily =
-                                    InterfaceFont
+                                text = "Mail is not connected",
+                                color = SecondaryText,
+                                fontSize = 10.sp,
+                                fontFamily = InterfaceFont
                             )
 
-                            Spacer(
-                                modifier =
-                                    Modifier.height(
-                                        7.dp
-                                    )
-                            )
+                            Spacer(Modifier.height(8.dp))
 
                             Text(
-                                text =
-                                    "sign in",
-                                color =
-                                    AccentOrange,
-                                fontSize =
-                                    10.sp,
-                                fontFamily =
-                                    InterfaceFont,
-                                fontWeight =
-                                    FontWeight.Medium,
+                                text = "Sign in",
+                                color = BackgroundBlack,
+                                fontSize = 10.sp,
+                                fontFamily = InterfaceFont,
+                                fontWeight = FontWeight.SemiBold,
                                 modifier =
                                     Modifier
-                                        .border(
-                                            0.75.dp,
+                                        .background(
                                             AccentOrange,
-                                            RoundedCornerShape(
-                                                8.dp
-                                            )
+                                            RoundedCornerShape(10.dp)
                                         )
                                         .clickable {
                                             onConnectMail()
                                         }
                                         .padding(
-                                            horizontal = 12.dp,
-                                            vertical = 5.dp
+                                            horizontal = 14.dp,
+                                            vertical = 7.dp
                                         )
                             )
                         }
@@ -1643,14 +1686,10 @@ internal fun HubScreen(
                     } else {
 
                         Text(
-                            text =
-                                "nothing here",
-                            color =
-                                TertiaryText,
-                            fontSize =
-                                9.sp,
-                            fontFamily =
-                                InterfaceFont
+                            text = "Nothing here",
+                            color = SecondaryText,
+                            fontSize = 10.sp,
+                            fontFamily = InterfaceFont
                         )
                     }
                 }
@@ -1665,50 +1704,148 @@ internal fun HubScreen(
                             .fillMaxWidth()
                             .weight(
                                 1f
-                            ),
-                    verticalArrangement =
-                        Arrangement.spacedBy(
-                            2.dp
-                        )
+                            )
                 ) {
 
-                    itemsIndexed(
-                        items =
-                            filteredItems,
-                        key = {
-                                _,
-                                item ->
-
-                            item.id
-                        }
+                    /*
+                     * Section headers are their own lazy items but not
+                     * part of the keyboard index: rows use one flat
+                     * index across both sections (see lazyIndexFor).
+                     */
+                    if (
+                        nowItems.isNotEmpty()
                     ) {
-                            index,
-                            item ->
 
-                        HubRow(
-                            item =
-                                item,
-                            selected =
-                                index ==
-                                        selectedIndex,
-                            onClick = {
+                        item(
+                            key = "hub-section-now"
+                        ) {
+                            HubSectionHeader(
+                                text =
+                                    if (selectedCategory == HubCategory.EMAIL) "New"
+                                    else "Now",
+                                first = true
+                            )
+                        }
 
-                                onSelectedIndexChange(
-                                    index
-                                )
+                        itemsIndexed(
+                            items =
+                                nowItems,
+                            key = { _, item ->
+                                item.id
+                            }
+                        ) { index, item ->
 
-                                openItem(
-                                    item
-                                )
-                            },
-                            onDismiss = {
-                                clearItems(
-                                    listOf(
-                                        item
-                                    )
+                            DaylightCardSegment(
+                                isFirst = index == 0,
+                                isLast = index == nowItems.lastIndex
+                            ) {
+                                HubRow(
+                                    item =
+                                        item,
+                                    selected =
+                                        index ==
+                                                selectedIndex,
+                                    onClick = {
+
+                                        onSelectedIndexChange(
+                                            index
+                                        )
+
+                                        openItem(
+                                            item
+                                        )
+                                    },
+                                    onDismiss = {
+                                        clearItems(
+                                            listOf(
+                                                item
+                                            )
+                                        )
+                                    }
                                 )
                             }
-                        )
+                        }
+                    }
+
+                    if (
+                        earlierItems.isNotEmpty()
+                    ) {
+
+                        item(
+                            key = "hub-section-earlier"
+                        ) {
+                            HubSectionHeader(
+                                text = "Earlier",
+                                first = nowItems.isEmpty()
+                            )
+                        }
+
+                        itemsIndexed(
+                            items =
+                                earlierItems,
+                            key = { _, item ->
+                                item.id
+                            }
+                        ) { index, item ->
+
+                            val flatIndex =
+                                nowCount + index
+
+                            DaylightCardSegment(
+                                isFirst = index == 0,
+                                isLast = index == earlierItems.lastIndex
+                            ) {
+                                HubRow(
+                                    item =
+                                        item,
+                                    selected =
+                                        flatIndex ==
+                                                selectedIndex,
+                                    onClick = {
+
+                                        onSelectedIndexChange(
+                                            flatIndex
+                                        )
+
+                                        openItem(
+                                            item
+                                        )
+                                    },
+                                    onDismiss = {
+                                        clearItems(
+                                            listOf(
+                                                item
+                                            )
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (
+                        selectedCategory == HubCategory.EMAIL
+                    ) {
+
+                        item(
+                            key = "hub-email-footer"
+                        ) {
+                            Text(
+                                text = "Read an email in its app and it drops off this list",
+                                color = SecondaryText,
+                                fontSize = 8.5.sp,
+                                lineHeight = 11.sp,
+                                fontFamily = InterfaceFont,
+                                textAlign = TextAlign.Center,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            top = 12.dp,
+                                            bottom = 4.dp
+                                        )
+                            )
+                        }
                     }
                 }
             }
@@ -1768,6 +1905,162 @@ internal fun HubScreen(
                 }
             )
         }
+
+        /*
+         * Rendered outside the hub's focused column so its keys go to
+         * the preview card rather than the list underneath.
+         */
+        mailPreviewItem?.let { previewItem ->
+            DaylightMailPreview(
+                item = previewItem,
+                onDismiss = {
+                    mailPreviewItem =
+                        null
+                }
+            )
+        }
+    }
+}
+
+/*
+ * "NOW" / "EARLIER" over a hub section card.
+ */
+@Composable
+private fun HubSectionHeader(
+    text: String,
+    first: Boolean
+) {
+    DaylightSectionLabel(
+        text = text,
+        modifier =
+            Modifier.padding(
+                top = if (first) 0.dp else 12.dp,
+                bottom = 7.dp
+            )
+    )
+}
+
+/*
+ * The quiet card asking for notification or call-log access.
+ */
+@Composable
+private fun HubPermissionBanner(
+    text: String,
+    onClick: () -> Unit
+) {
+    Text(
+        text = text,
+        color = AccentOrange,
+        fontSize = 8.5.sp,
+        lineHeight = 10.sp,
+        fontFamily = InterfaceFont,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    SurfaceBlack,
+                    RoundedCornerShape(12.dp)
+                )
+                .clickable {
+                    onClick()
+                }
+                .padding(
+                    horizontal = 12.dp,
+                    vertical = 8.dp
+                )
+    )
+}
+
+/*
+ * One row's slice of a white rounded section card. Lazy lists cannot
+ * wrap several items in one background, so each row draws its part of
+ * the card: rounded top on the first, rounded bottom on the last, and
+ * a hairline under every row but the last.
+ */
+@Composable
+internal fun DaylightCardSegment(
+    isFirst: Boolean,
+    isLast: Boolean,
+    content: @Composable () -> Unit
+) {
+
+    val radius =
+        14.dp
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    SurfaceBlack,
+                    RoundedCornerShape(
+                        topStart = if (isFirst) radius else 0.dp,
+                        topEnd = if (isFirst) radius else 0.dp,
+                        bottomStart = if (isLast) radius else 0.dp,
+                        bottomEnd = if (isLast) radius else 0.dp
+                    )
+                )
+                .padding(
+                    start = 6.dp,
+                    end = 6.dp,
+                    top = if (isFirst) 3.dp else 0.dp,
+                    bottom = if (isLast) 3.dp else 0.dp
+                )
+    ) {
+
+        content()
+
+        if (!isLast) {
+            Box(
+                modifier =
+                    Modifier.padding(
+                        horizontal = 6.dp
+                    )
+            ) {
+                DaylightRowDivider()
+            }
+        }
+    }
+}
+
+/*
+ * "now", "14m", "3h", then the date. With long = true: "14 minutes
+ * ago", as the mail preview shows it.
+ */
+internal fun hubRelativeTime(
+    timestamp: Long,
+    long: Boolean = false
+): String {
+
+    val elapsed =
+        (System.currentTimeMillis() - timestamp)
+            .coerceAtLeast(0L)
+
+    val minutes =
+        TimeUnit.MILLISECONDS.toMinutes(elapsed)
+
+    val hours =
+        TimeUnit.MILLISECONDS.toHours(elapsed)
+
+    return when {
+        minutes < 1L ->
+            if (long) "just now" else "now"
+
+        minutes < 60L ->
+            if (!long) "${minutes}m"
+            else if (minutes == 1L) "1 minute ago"
+            else "$minutes minutes ago"
+
+        hours < 24L ->
+            if (!long) "${hours}h"
+            else if (hours == 1L) "1 hour ago"
+            else "$hours hours ago"
+
+        else ->
+            formatInboxTime(timestamp)
     }
 }
 
@@ -1843,217 +2136,414 @@ internal fun HubRow(
     onClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 46.dp)
-            .background(
-                if (selected) SurfaceBlack else BackgroundBlack,
-                RoundedCornerShape(8.dp)
-            )
-            .border(
-                width = if (selected) 0.75.dp else 0.dp,
-                color = if (selected) BorderGray else Color.Transparent,
-                shape = RoundedCornerShape(8.dp)
-            )
-            .clickable {
-                onClick()
-            }
-            .padding(horizontal = 7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        /*
-         * Leading indicator.
-         *
-         * Mail and calls use vector icons, messages and notifications
-         * use glyphs that carry unread state through weight. Both sit
-         * in a fixed width box so every row's text starts at the same
-         * x position regardless of which kind it is.
-         */
-        val indicatorColor =
-            if (item.unread || item.missed) AccentOrange else SecondaryText
 
-        val contactPhoto =
-            rememberContactPhoto(
-                item.photoUri
-            )
+    val contactPhoto =
+        rememberContactPhoto(
+            item.photoUri
+        )
 
-        Box(
-            modifier = Modifier.width(14.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (contactPhoto != null) {
-
-                /*
-                 * A saved contact's picture stands in for the glyph.
-                 * Unread and missed rows get an accent ring, since the
-                 * photo cannot carry weight the way @ and * do.
-                 */
-                Image(
-                    bitmap = contactPhoto,
-                    contentDescription = item.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(14.dp)
-                        .clip(CircleShape)
-                        .border(
-                            width = if (item.unread || item.missed) 1.dp else 0.dp,
-                            color = if (item.unread || item.missed) AccentOrange else Color.Transparent,
-                            shape = CircleShape
-                        )
-                )
-
-            } else if (
-                DebugContactPhotos &&
-                (item.type == HubItemType.MESSAGE ||
-                        item.type == HubItemType.CALL)
-            ) {
-
-                Text(
-                    text =
-                        if (item.photoUri.isNullOrBlank()) "n" else "d",
-                    color = AccentOrange,
-                    fontSize = 11.sp,
-                    fontFamily = InterfaceFont,
-                    fontWeight = FontWeight.Bold
-                )
-
-            } else when (item.type) {
-
-                HubItemType.EMAIL ->
-                    Icon(
-                        imageVector =
-                            if (item.unread) {
-                                Icons.Outlined.Email
-                            } else {
-                                Icons.Outlined.Drafts
-                            },
-                        contentDescription =
-                            if (item.unread) "unread email" else "read email",
-                        tint = indicatorColor,
-                        modifier = Modifier.size(11.dp)
-                    )
-
-                HubItemType.CALL ->
-                    Icon(
-                        imageVector = Icons.Outlined.Call,
-                        contentDescription = "call",
-                        tint = indicatorColor,
-                        modifier = Modifier.size(11.dp)
-                    )
-
-                HubItemType.MESSAGE ->
-                    Text(
-                        text = "@",
-                        color = indicatorColor,
-                        fontSize = 11.sp,
-                        fontFamily = InterfaceFont,
-                        fontWeight = if (item.unread) {
-                            FontWeight.Bold
-                        } else {
-                            FontWeight.Normal
-                        }
-                    )
-
-                HubItemType.NOTIFICATION ->
-                    Text(
-                        text = "*",
-                        color = indicatorColor,
-                        fontSize = 13.sp,
-                        fontFamily = InterfaceFont,
-                        fontWeight = if (item.unread) {
-                            FontWeight.Bold
-                        } else {
-                            FontWeight.Normal
-                        }
-                    )
-            }
+    val emailParts =
+        if (item.type == HubItemType.EMAIL) {
+            rememberHubEmailParts(item)
+        } else {
+            null
         }
 
-        Spacer(Modifier.width(7.dp))
-
-        Column(Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text =
-                        if (
-                            item.type == HubItemType.MESSAGE ||
-                            item.type == HubItemType.CALL
-                        ) {
-                            item.title.lowercase()
-                        } else {
-                            item.title
-                        },
-                    color = PrimaryText,
-                    fontSize = 8.5.sp,
-                    lineHeight = 8.5.sp,
-                    fontFamily = InterfaceFont,
-                    fontWeight = if (item.unread || item.missed) {
-                        FontWeight.Bold
-                    } else {
-                        FontWeight.Normal
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 46.dp)
+                .background(
+                    if (selected) AccentOrange.copy(alpha = 0.08f)
+                    else Color.Transparent,
+                    RoundedCornerShape(10.dp)
                 )
+                .clickable {
+                    onClick()
+                }
+                .padding(
+                    start = 6.dp,
+                    end = 2.dp,
+                    top = 8.dp,
+                    bottom = 8.dp
+                ),
+        verticalAlignment =
+            if (emailParts != null) Alignment.Top
+            else Alignment.CenterVertically
+    ) {
 
-                Text(
-                    text = formatInboxTime(item.timestamp),
-                    color = TertiaryText,
-                    fontSize = 6.sp,
-                    fontFamily = InterfaceFont
-                )
+        HubAvatar(
+            item = item,
+            photo = contactPhoto
+        )
 
-            }
+        Spacer(Modifier.width(10.dp))
+
+        if (emailParts != null) {
 
             /*
-             * Both line heights already match their font sizes, so
-             * the space that was left is the font's own built-in
-             * leading, which lineHeight does not remove. Lifting the
-             * preview closes it without touching either line box.
+             * Email, as in the inbox mockup: sender and time, then the
+             * subject, then one line of preview, with the mail app's
+             * name as a small grey tag on the right.
              */
-            Text(
-                text = item.preview,
-                color = SecondaryText,
-                fontSize = 7.sp,
-                lineHeight = 7.sp,
-                fontFamily = InterfaceFont,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = (-3).dp)
-            )
+            Column(
+                modifier =
+                    Modifier.weight(1f)
+            ) {
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.title,
+                        color = PrimaryText,
+                        fontSize = 10.5.sp,
+                        lineHeight = 13.sp,
+                        fontFamily = InterfaceFont,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Spacer(Modifier.width(6.dp))
+
+                    HubTimeText(item)
+                }
+
+                if (emailParts.subject.isNotBlank()) {
+                    Text(
+                        text = emailParts.subject,
+                        color = PrimaryText,
+                        fontSize = 10.sp,
+                        lineHeight = 12.5.sp,
+                        fontFamily = InterfaceFont,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (emailParts.body.isNotBlank()) {
+                    Text(
+                        text = emailParts.body.replace('\n', ' '),
+                        color = SecondaryText,
+                        fontSize = 9.sp,
+                        lineHeight = 11.5.sp,
+                        fontFamily = InterfaceFont,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (emailParts.tag != null) {
+
+                Spacer(Modifier.width(8.dp))
+
+                Text(
+                    text = emailParts.tag,
+                    color = SecondaryText,
+                    fontSize = 7.5.sp,
+                    lineHeight = 9.sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier =
+                        Modifier
+                            .align(Alignment.CenterVertically)
+                            .widthIn(max = 70.dp)
+                            .background(
+                                BackgroundBlack,
+                                RoundedCornerShape(999.dp)
+                            )
+                            .padding(
+                                horizontal = 6.5.dp,
+                                vertical = 2.5.dp
+                            )
+                )
+            }
+
+        } else {
+
+            Column(
+                modifier =
+                    Modifier.weight(1f)
+            ) {
+
+                Text(
+                    text = item.title,
+                    color = PrimaryText,
+                    fontSize = 10.5.sp,
+                    lineHeight = 13.sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(Modifier.height(1.dp))
+
+                Text(
+                    text =
+                        if (item.type == HubItemType.CALL) {
+                            item.preview.replaceFirstChar { it.uppercase() }
+                        } else {
+                            item.preview.replace('\n', ' ')
+                        },
+                    color =
+                        if (item.missed) ProductivityRed
+                        else SecondaryText,
+                    fontSize = 9.sp,
+                    lineHeight = 11.5.sp,
+                    fontFamily = InterfaceFont,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            HubTimeText(item)
         }
 
-        Spacer(Modifier.width(5.dp))
-
         /*
-         * Sits outside the text column so its tap target cannot
-         * inflate the title line and push the preview away from it.
-         * Its own clickable consumes the tap, so the row underneath
-         * does not open.
+         * Clear, kept quiet. Its own clickable consumes the tap, so
+         * the row underneath does not open.
          */
         Box(
-            modifier = Modifier
-                .align(Alignment.Top)
-                .size(14.dp)
-                .clickable {
-                    onDismiss()
-                },
+            modifier =
+                Modifier
+                    .align(Alignment.CenterVertically)
+                    .size(18.dp)
+                    .clickable {
+                        onDismiss()
+                    },
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Outlined.Close,
                 contentDescription = "clear",
-                tint = TertiaryText,
+                tint = TertiaryText.copy(alpha = 0.7f),
                 modifier = Modifier.size(9.dp)
             )
         }
     }
 }
+
+/*
+ * "2m" in the accent colour while unread, muted once seen.
+ */
+@Composable
+private fun HubTimeText(
+    item: HubDisplayItem
+) {
+    Text(
+        text = hubRelativeTime(item.timestamp),
+        color =
+            if (item.unread) AccentOrange
+            else SecondaryText,
+        fontSize = 8.5.sp,
+        lineHeight = 10.sp,
+        fontFamily = InterfaceFont,
+        fontWeight =
+            if (item.unread) FontWeight.SemiBold
+            else FontWeight.Normal,
+        maxLines = 1
+    )
+}
+
+/*
+ * The 30 dp circle at the start of a hub row: the contact's photo when
+ * there is one, otherwise initials (filled for an unread text), the
+ * member count for a group, or an icon in a tinted circle. Missed
+ * calls are tinted orange.
+ */
+@Composable
+private fun HubAvatar(
+    item: HubDisplayItem,
+    photo: ImageBitmap?
+) {
+
+    val avatarSize =
+        30.dp
+
+    if (photo != null) {
+        Image(
+            bitmap = photo,
+            contentDescription = item.title,
+            contentScale = ContentScale.Crop,
+            modifier =
+                Modifier
+                    .size(avatarSize)
+                    .clip(CircleShape)
+        )
+        return
+    }
+
+    val initials =
+        contactInitials(
+            item.title
+        )
+
+    when {
+
+        item.type == HubItemType.MESSAGE &&
+                item.isGroup -> {
+
+            val memberCount =
+                item.threadKey
+                    .split(",")
+                    .count {
+                        it.isNotBlank()
+                    }
+
+            Box(
+                modifier =
+                    Modifier
+                        .size(avatarSize)
+                        .background(
+                            BorderGray,
+                            CircleShape
+                        ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text =
+                        if (memberCount > 0) memberCount.toString()
+                        else "#",
+                    color = PrimaryText,
+                    fontSize = 9.sp,
+                    lineHeight = 10.sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+        }
+
+        (item.type == HubItemType.MESSAGE ||
+                item.type == HubItemType.EMAIL) &&
+                initials != "#" -> {
+
+            DaylightAvatar(
+                label = initials,
+                filled =
+                    item.type == HubItemType.MESSAGE &&
+                            item.unread,
+                sizeDp = 30
+            )
+        }
+
+        else -> {
+
+            val tint =
+                if (item.missed) ProductivityRed
+                else AccentOrange
+
+            Box(
+                modifier =
+                    Modifier
+                        .size(avatarSize)
+                        .background(
+                            tint.copy(alpha = 0.14f),
+                            CircleShape
+                        ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector =
+                        when (item.type) {
+                            HubItemType.CALL -> Icons.Outlined.Call
+                            HubItemType.EMAIL -> Icons.Outlined.Email
+                            HubItemType.MESSAGE -> Icons.Outlined.Message
+                            HubItemType.NOTIFICATION -> Icons.Outlined.Notifications
+                        },
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+        }
+    }
+}
+
+/*
+ * An email row's pieces. Mail-app notifications arrive as
+ * "AppName · text"; the app name becomes the tag and the text splits
+ * into subject and preview.
+ */
+private data class HubEmailParts(
+    val tag: String?,
+    val subject: String,
+    val body: String
+)
+
+@Composable
+private fun rememberHubEmailParts(
+    item: HubDisplayItem
+): HubEmailParts =
+    remember(
+        item.notificationKey,
+        item.preview,
+        item.mailMessage
+    ) {
+
+        val mailMessage =
+            item.mailMessage
+
+        if (mailMessage != null) {
+
+            HubEmailParts(
+                tag = "Gmail",
+                subject = mailMessage.subject,
+                body = mailMessage.snippet
+            )
+
+        } else {
+
+            val appName =
+                item.notificationKey
+                    ?.let { key ->
+                        NotificationCenter
+                            .notifications
+                            .value
+                            .firstOrNull {
+                                it.key == key
+                            }
+                            ?.appName
+                    }
+                    .orEmpty()
+                    .trim()
+
+            val prefix =
+                "$appName · "
+
+            val tagged =
+                appName.isNotBlank() &&
+                        (item.preview.startsWith(prefix) ||
+                                item.preview == appName)
+
+            val text =
+                when {
+                    !tagged -> item.preview
+                    item.preview == appName -> ""
+                    else -> item.preview.removePrefix(prefix)
+                }
+
+            val (subject, body) =
+                splitMailNotificationText(
+                    text
+                )
+
+            HubEmailParts(
+                tag = if (tagged) appName else null,
+                subject = subject,
+                body = body
+            )
+        }
+    }
 
 fun formatCallDuration(
     seconds: Long
@@ -2141,6 +2631,11 @@ fun MailInboxScreen(
         }
     }
 
+    val unreadCount =
+        messages.count {
+            it.unread
+        }
+
     Column(
         modifier =
             Modifier
@@ -2150,9 +2645,9 @@ fun MailInboxScreen(
                 )
                 .padding(
                     horizontal =
-                        10.dp,
+                        DaylightPageHorizontal,
                     vertical =
-                        7.dp
+                        DaylightPageVertical
                 )
                 .focusRequester(
                     focusRequester
@@ -2249,53 +2744,79 @@ fun MailInboxScreen(
                 }
     ) {
 
+        /*
+         * Daylight header: title right of the camera, unread count
+         * underneath, a round close button on the right.
+         */
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = CameraSafeStartPadding),
+                    .padding(start = DaylightCameraLane),
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
 
-            LauncherBackButton(onBack = onBack)
-
-            Spacer(
+            Column(
                 modifier =
-                    Modifier.width(
-                        8.dp
-                    )
-            )
+                    Modifier.weight(1f)
+            ) {
 
-            Text(
-                text =
-                    "mail",
-                color =
-                    PrimaryText,
-                fontSize =
-                    29.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Bold
+                Text(
+                    text = "Mail",
+                    color = PrimaryText,
+                    fontSize = 24.sp,
+                    lineHeight = 25.sp,
+                    letterSpacing = (-0.7).sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+
+                Spacer(Modifier.height(2.dp))
+
+                Text(
+                    text =
+                        buildAnnotatedString {
+                            when {
+                                loading && messages.isEmpty() ->
+                                    append("Loading Gmail")
+
+                                unreadCount > 0 -> {
+                                    withStyle(
+                                        SpanStyle(
+                                            color = AccentOrange,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    ) {
+                                        append("$unreadCount unread")
+                                    }
+                                    append(" in Gmail")
+                                }
+
+                                else ->
+                                    append("Gmail · all read")
+                            }
+                        },
+                    color = SecondaryText,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    fontFamily = InterfaceFont,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            MailRoundIconButton(
+                imageVector = Icons.Outlined.Close,
+                contentDescription = "close",
+                onClick = onBack
             )
         }
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    5.dp
-                )
-        )
-
-        MinimalDivider()
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    4.dp
-                )
-        )
+        Spacer(Modifier.height(12.dp))
 
         if (
             messages.isEmpty()
@@ -2317,12 +2838,12 @@ fun MailInboxScreen(
                         if (
                             loading
                         ) {
-                            "loading mail"
+                            "Loading mail"
                         } else {
-                            "no inbox mail"
+                            "No inbox mail"
                         },
                     color =
-                        TertiaryText,
+                        SecondaryText,
                     fontSize =
                         10.sp,
                     fontFamily =
@@ -2340,11 +2861,7 @@ fun MailInboxScreen(
                         .fillMaxWidth()
                         .weight(
                             1f
-                        ),
-                verticalArrangement =
-                    Arrangement.spacedBy(
-                        2.dp
-                    )
+                        )
             ) {
 
                 itemsIndexed(
@@ -2360,34 +2877,39 @@ fun MailInboxScreen(
                         index,
                         message ->
 
-                    MailInboxRow(
-                        message =
-                            message,
-                        selected =
-                            index ==
-                                    selectedIndex,
-                        onClick = {
+                    DaylightCardSegment(
+                        isFirst = index == 0,
+                        isLast = index == messages.lastIndex
+                    ) {
+                        MailInboxRow(
+                            message =
+                                message,
+                            selected =
+                                index ==
+                                        selectedIndex,
+                            onClick = {
 
-                            selectedIndex =
-                                index
+                                selectedIndex =
+                                    index
 
-                            onOpenMessage(
-                                message
-                            )
-                        },
-                        onTrash = {
+                                onOpenMessage(
+                                    message
+                                )
+                            },
+                            onTrash = {
 
-                            onTrashMessage(
-                                message
-                            )
-                        },
-                        onMarkUnread = {
+                                onTrashMessage(
+                                    message
+                                )
+                            },
+                            onMarkUnread = {
 
-                            onMarkUnread(
-                                message
-                            )
-                        }
-                    )
+                                onMarkUnread(
+                                    message
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -2416,26 +2938,24 @@ fun MailInboxRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 54.dp)
-                .background(
-                    SurfaceBlack,
-                    RoundedCornerShape(
-                        8.dp
-                    )
-                )
+                .heightIn(min = 50.dp)
     ) {
 
+        /*
+         * Revealed under the row while it is swiped: right marks
+         * unread, left trashes.
+         */
         Text(
             text =
-                "UNREAD",
+                "Unread",
             color =
                 AccentOrange,
             fontSize =
-                8.sp,
+                8.5.sp,
             fontFamily =
                 InterfaceFont,
             fontWeight =
-                FontWeight.Bold,
+                FontWeight.SemiBold,
             modifier =
                 Modifier
                     .align(
@@ -2443,21 +2963,21 @@ fun MailInboxRow(
                     )
                     .padding(
                         start =
-                            12.dp
+                            10.dp
                     )
         )
 
         Text(
             text =
-                "TRASH",
+                "Trash",
             color =
-                AccentOrange,
+                ProductivityRed,
             fontSize =
-                8.sp,
+                8.5.sp,
             fontFamily =
                 InterfaceFont,
             fontWeight =
-                FontWeight.Bold,
+                FontWeight.SemiBold,
             modifier =
                 Modifier
                     .align(
@@ -2465,7 +2985,7 @@ fun MailInboxRow(
                     )
                     .padding(
                         end =
-                            12.dp
+                            10.dp
                     )
         )
 
@@ -2473,7 +2993,7 @@ fun MailInboxRow(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 54.dp)
+                    .heightIn(min = 50.dp)
                     .offset {
                         IntOffset(
                             horizontalOffset
@@ -2482,38 +3002,13 @@ fun MailInboxRow(
                         )
                     }
                     .background(
-                        if (
-                            selected
-                        ) {
-                            SurfaceBlack
-                        } else {
-                            BackgroundBlack
-                        },
-                        RoundedCornerShape(
-                            8.dp
-                        )
+                        SurfaceBlack,
+                        RoundedCornerShape(10.dp)
                     )
-                    .border(
-                        width =
-                            if (
-                                selected
-                            ) {
-                                0.75.dp
-                            } else {
-                                0.dp
-                            },
-                        color =
-                            if (
-                                selected
-                            ) {
-                                BorderGray
-                            } else {
-                                Color.Transparent
-                            },
-                        shape =
-                            RoundedCornerShape(
-                                8.dp
-                            )
+                    .background(
+                        if (selected) AccentOrange.copy(alpha = 0.08f)
+                        else Color.Transparent,
+                        RoundedCornerShape(10.dp)
                     )
                     .pointerInput(
                         message.id
@@ -2566,42 +3061,27 @@ fun MailInboxRow(
                         onClick()
                     }
                     .padding(
-                        horizontal =
-                            8.dp,
-                        vertical =
-                            4.dp
+                        start = 6.dp,
+                        end = 6.dp,
+                        top = 9.dp,
+                        bottom = 9.dp
                     ),
             verticalAlignment =
-                Alignment.CenterVertically
+                Alignment.Top
         ) {
 
-            Text(
-                text =
-                    if (
-                        message.unread
-                    ) {
-                        "•"
-                    } else {
-                        " "
-                    },
-                color =
-                    AccentOrange,
-                fontSize =
-                    10.sp,
-                lineHeight =
-                    10.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Bold
+            DaylightAvatar(
+                label =
+                    contactInitials(
+                        message.sender
+                    ),
+                filled =
+                    message.unread,
+                sizeDp =
+                    30
             )
 
-            Spacer(
-                modifier =
-                    Modifier.width(
-                        5.dp
-                    )
-            )
+            Spacer(Modifier.width(10.dp))
 
             Column(
                 modifier =
@@ -2619,26 +3099,20 @@ fun MailInboxRow(
 
                     Text(
                         text =
-                            message.sender.uppercase(),
+                            message.sender,
                         color =
-                            if (
-                                message.unread
-                            ) {
-                                PrimaryText
-                            } else {
-                                SecondaryText
-                            },
+                            PrimaryText,
                         fontSize =
-                            9.5.sp,
+                            10.5.sp,
                         lineHeight =
-                            9.8.sp,
+                            13.sp,
                         fontFamily =
                             InterfaceFont,
                         fontWeight =
                             if (
                                 message.unread
                             ) {
-                                FontWeight.Bold
+                                FontWeight.SemiBold
                             } else {
                                 FontWeight.Medium
                             },
@@ -2652,68 +3126,95 @@ fun MailInboxRow(
                             )
                     )
 
-                    Spacer(
-                        modifier =
-                            Modifier.width(
-                                6.dp
-                            )
-                    )
+                    if (
+                        message.important
+                    ) {
+
+                        Spacer(Modifier.width(6.dp))
+
+                        Text(
+                            text = "Important",
+                            color = AccentOrange,
+                            fontSize = 7.5.sp,
+                            lineHeight = 9.sp,
+                            fontFamily = InterfaceFont,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier =
+                                Modifier
+                                    .background(
+                                        AccentOrange.copy(alpha = 0.10f),
+                                        RoundedCornerShape(999.dp)
+                                    )
+                                    .padding(
+                                        horizontal = 6.dp,
+                                        vertical = 2.dp
+                                    )
+                        )
+                    }
+
+                    Spacer(Modifier.width(6.dp))
 
                     Text(
                         text =
-                            formatInboxTime(
+                            hubRelativeTime(
                                 message.timestamp
                             ),
                         color =
-                            TertiaryText,
+                            if (message.unread) AccentOrange
+                            else SecondaryText,
                         fontSize =
-                            6.5.sp,
+                            8.5.sp,
+                        lineHeight =
+                            10.sp,
                         fontFamily =
                             InterfaceFont,
+                        fontWeight =
+                            if (message.unread) FontWeight.SemiBold
+                            else FontWeight.Normal,
                         maxLines =
                             1
                     )
                 }
+
+                if (
+                    message.subject.isNotBlank()
+                ) {
+                    Text(
+                        text =
+                            message.subject,
+                        color =
+                            PrimaryText,
+                        fontSize =
+                            10.sp,
+                        lineHeight =
+                            12.5.sp,
+                        fontFamily =
+                            InterfaceFont,
+                        fontWeight =
+                            FontWeight.Medium,
+                        maxLines =
+                            1,
+                        overflow =
+                            TextOverflow.Ellipsis
+                    )
+                }
+
                 Text(
                     text =
                         message.snippet,
                     color =
-                        TertiaryText,
+                        SecondaryText,
                     fontSize =
-                        7.5.sp,
+                        9.sp,
                     lineHeight =
-                        7.8.sp,
+                        11.5.sp,
                     fontFamily =
                         InterfaceFont,
                     maxLines =
                         1,
                     overflow =
                         TextOverflow.Ellipsis
-                )
-            }
-
-            if (
-                message.important
-            ) {
-
-                Spacer(
-                    modifier =
-                        Modifier.width(
-                            5.dp
-                        )
-                )
-
-                Text(
-                    text =
-                        "!",
-                    color =
-                        AccentOrange,
-                    fontSize =
-                        10.sp,
-                    fontFamily =
-                        InterfaceFont,
-                    fontWeight =
-                        FontWeight.Bold
                 )
             }
         }
@@ -2765,7 +3266,7 @@ fun MailDetailScreen(
                         ) {
                             12.dp
                         } else {
-                            10.dp
+                            DaylightPageHorizontal
                         },
                     vertical =
                         if (
@@ -2773,7 +3274,7 @@ fun MailDetailScreen(
                         ) {
                             10.dp
                         } else {
-                            7.dp
+                            DaylightPageVertical
                         }
                 )
                 .focusRequester(
@@ -2822,6 +3323,10 @@ fun MailDetailScreen(
                 Modifier.fillMaxSize()
         ) {
 
+            /*
+             * Header: sender with initials, the date underneath, round
+             * back and more buttons.
+             */
             Row(
                 modifier =
                     Modifier
@@ -2833,24 +3338,25 @@ fun MailDetailScreen(
                                 ) {
                                     0.dp
                                 } else {
-                                    CameraSafeStartPadding
+                                    DaylightCameraLane
                                 }
                         ),
                 verticalAlignment =
                     Alignment.CenterVertically
             ) {
 
-                LauncherBackButton(
-                    onBack =
-                        onBack
+                DaylightAvatar(
+                    label =
+                        contactInitials(
+                            message.sender
+                        ),
+                    filled =
+                        true,
+                    sizeDp =
+                        33
                 )
 
-                Spacer(
-                    modifier =
-                        Modifier.width(
-                            8.dp
-                        )
-                )
+                Spacer(Modifier.width(9.dp))
 
                 Column(
                     modifier =
@@ -2861,85 +3367,65 @@ fun MailDetailScreen(
 
                     Text(
                         text =
-                            message.sender.uppercase(),
+                            message.sender,
                         color =
                             PrimaryText,
                         fontSize =
-                            if (
-                                floatingMode
-                            ) {
-                                14.5.sp
-                            } else {
-                                13.5.sp
-                            },
-                        fontFamily =
-                            InterfaceFont,
-                        fontWeight =
-                            FontWeight.Medium,
-                        maxLines =
-                            1
-                    )
-
-                    Text(
-                        text =
-                            formatMailDate(
-                                message.timestamp
-                            ),
-                        color =
-                            TertiaryText,
-                        fontSize =
-                            if (
-                                floatingMode
-                            ) {
-                                7.6.sp
-                            } else {
-                                7.sp
-                            },
-                        fontFamily =
-                            InterfaceFont,
-                        maxLines =
-                            1
-                    )
-                }
-
-                Box(
-                    modifier =
-                        Modifier
-                            .width(
-                                36.dp
-                            )
-                            .height(
-                                30.dp
-                            )
-                            .clickable {
-
-                                showMoreMenu =
-                                    !showMoreMenu
-                            },
-                    contentAlignment =
-                        Alignment.Center
-                ) {
-
-                    Text(
-                        text =
-                            "...",
-                        color =
-                            AccentOrange,
-                        fontSize =
-                            13.sp,
+                            11.sp,
                         lineHeight =
                             13.sp,
                         fontFamily =
                             InterfaceFont,
                         fontWeight =
-                            FontWeight.Medium,
+                            FontWeight.SemiBold,
                         maxLines =
                             1,
-                        softWrap =
-                            false
+                        overflow =
+                            TextOverflow.Ellipsis
+                    )
+
+                    Text(
+                        text =
+                            "Gmail · " +
+                                    formatMailDate(
+                                        message.timestamp
+                                    ),
+                        color =
+                            SecondaryText,
+                        fontSize =
+                            8.5.sp,
+                        lineHeight =
+                            10.sp,
+                        fontFamily =
+                            InterfaceFont,
+                        maxLines =
+                            1
                     )
                 }
+
+                Spacer(Modifier.width(6.dp))
+
+                MailRoundIconButton(
+                    imageVector = Icons.Outlined.MoreHoriz,
+                    contentDescription = "more",
+                    background = SurfaceBlack,
+                    onClick = {
+                        showMoreMenu =
+                            !showMoreMenu
+                    }
+                )
+
+                Spacer(Modifier.width(6.dp))
+
+                MailRoundIconButton(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "close",
+                    background = SurfaceBlack,
+                    onClick = onBack
+                )
             }
+
+            Spacer(Modifier.height(10.dp))
 
             LazyColumn(
                 modifier =
@@ -2952,110 +3438,114 @@ fun MailDetailScreen(
 
                 item {
 
-                    Text(
-                        text =
-                            message.subject,
-                        color =
-                            PrimaryText,
-                        fontSize =
-                            if (
-                                floatingMode
-                            ) {
-                                13.sp
-                            } else {
-                                12.sp
-                            },
-                        lineHeight =
-                            if (
-                                floatingMode
-                            ) {
-                                16.sp
-                            } else {
-                                15.sp
-                            },
-                        fontFamily =
-                            InterfaceFont,
-                        fontWeight =
-                            FontWeight.Medium
-                    )
-
-                    if (
-                        message.important ||
-                        message.unread
+                    DaylightCard(
+                        horizontalPadding = 15.dp,
+                        verticalPadding = 14.dp
                     ) {
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(
-                                    3.dp
-                                )
-                        )
 
                         Text(
                             text =
-                                buildList {
-
-                                    if (
-                                        message.important
-                                    ) {
-                                        add(
-                                            "IMPORTANT"
-                                        )
-                                    }
-
-                                    if (
-                                        message.unread
-                                    ) {
-                                        add(
-                                            "UNREAD"
-                                        )
-                                    }
-                                }
-                                    .joinToString(
-                                        " · "
-                                    ),
+                                message.subject.ifBlank {
+                                    "(no subject)"
+                                },
                             color =
-                                AccentOrange,
+                                PrimaryText,
                             fontSize =
-                                7.sp,
+                                if (
+                                    floatingMode
+                                ) {
+                                    15.sp
+                                } else {
+                                    14.sp
+                                },
+                            lineHeight =
+                                if (
+                                    floatingMode
+                                ) {
+                                    17.5.sp
+                                } else {
+                                    16.sp
+                                },
+                            letterSpacing =
+                                (-0.3).sp,
+                            fontFamily =
+                                InterfaceFont,
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+
+                        if (
+                            message.important ||
+                            message.unread
+                        ) {
+
+                            Spacer(Modifier.height(4.dp))
+
+                            Text(
+                                text =
+                                    buildList {
+
+                                        if (
+                                            message.important
+                                        ) {
+                                            add(
+                                                "Important"
+                                            )
+                                        }
+
+                                        if (
+                                            message.unread
+                                        ) {
+                                            add(
+                                                "Unread"
+                                            )
+                                        }
+                                    }
+                                        .joinToString(
+                                            " · "
+                                        ),
+                                color =
+                                    AccentOrange,
+                                fontSize =
+                                    8.sp,
+                                fontFamily =
+                                    InterfaceFont,
+                                fontWeight =
+                                    FontWeight.SemiBold
+                            )
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Text(
+                            text =
+                                message.body,
+                            color =
+                                PrimaryText,
+                            fontSize =
+                                if (
+                                    floatingMode
+                                ) {
+                                    10.8.sp
+                                } else {
+                                    10.sp
+                                },
+                            lineHeight =
+                                if (
+                                    floatingMode
+                                ) {
+                                    15.6.sp
+                                } else {
+                                    14.5.sp
+                                },
                             fontFamily =
                                 InterfaceFont
                         )
                     }
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                8.dp
-                            )
-                    )
-
-                    Text(
-                        text =
-                            message.body,
-                        color =
-                            PrimaryText,
-                        fontSize =
-                            if (
-                                floatingMode
-                            ) {
-                                11.4.sp
-                            } else {
-                                10.5.sp
-                            },
-                        lineHeight =
-                            if (
-                                floatingMode
-                            ) {
-                                16.2.sp
-                            } else {
-                                15.sp
-                            },
-                        fontFamily =
-                            InterfaceFont
-                    )
                 }
             }
+
+            Spacer(Modifier.height(8.dp))
 
             Row(
                 modifier =
@@ -3065,18 +3555,24 @@ fun MailDetailScreen(
                             if (
                                 floatingMode
                             ) {
-                                36.dp
+                                38.dp
                             } else {
-                                32.dp
+                                36.dp
                             }
                         ),
+                horizontalArrangement =
+                    Arrangement.spacedBy(
+                        8.dp
+                    ),
                 verticalAlignment =
                     Alignment.CenterVertically
             ) {
 
                 MailDetailAction(
                     text =
-                        "reply",
+                        "Reply",
+                    primary =
+                        true,
                     modifier =
                         Modifier.weight(
                             1f
@@ -3090,7 +3586,7 @@ fun MailDetailScreen(
 
                 MailDetailAction(
                     text =
-                        "reply all",
+                        "Reply all",
                     modifier =
                         Modifier.weight(
                             1f
@@ -3104,7 +3600,7 @@ fun MailDetailScreen(
 
                 MailDetailAction(
                     text =
-                        "forward",
+                        "Forward",
                     modifier =
                         Modifier.weight(
                             1f
@@ -3150,24 +3646,24 @@ fun MailDetailScreen(
                         )
                         .padding(
                             top =
-                                30.dp,
+                                36.dp,
                             end =
                                 1.dp
                         )
                         .width(
-                            124.dp
+                            130.dp
                         )
                         .background(
                             SurfaceBlack,
                             RoundedCornerShape(
-                                10.dp
+                                12.dp
                             )
                         )
                         .border(
-                            0.8.dp,
+                            0.75.dp,
                             BorderGray,
                             RoundedCornerShape(
-                                10.dp
+                                12.dp
                             )
                         )
                         .padding(
@@ -3183,7 +3679,7 @@ fun MailDetailScreen(
 
                     MailMoreMenuAction(
                         text =
-                            "archive",
+                            "Archive",
                         onClick = {
 
                             showMoreMenu =
@@ -3197,7 +3693,7 @@ fun MailDetailScreen(
 
                     MailMoreMenuAction(
                         text =
-                            "snooze 24hrs",
+                            "Snooze 24 hours",
                         onClick = {
 
                             showMoreMenu =
@@ -3211,7 +3707,7 @@ fun MailDetailScreen(
 
                     MailMoreMenuAction(
                         text =
-                            "trash",
+                            "Trash",
                         onClick = {
 
                             showMoreMenu =
@@ -3240,7 +3736,7 @@ private fun MailMoreMenuAction(
             Modifier
                 .fillMaxWidth()
                 .height(
-                    30.dp
+                    32.dp
                 )
                 .clickable(
                     onClick =
@@ -3248,7 +3744,7 @@ private fun MailMoreMenuAction(
                 )
                 .padding(
                     horizontal =
-                        10.dp
+                        12.dp
                 ),
         contentAlignment =
             Alignment.CenterStart
@@ -3260,7 +3756,7 @@ private fun MailMoreMenuAction(
             color =
                 PrimaryText,
             fontSize =
-                8.5.sp,
+                9.5.sp,
             fontFamily =
                 InterfaceFont,
             fontWeight =
@@ -3270,11 +3766,16 @@ private fun MailMoreMenuAction(
 }
 
 
+/*
+ * Reply / Reply all / Forward: rounded Daylight buttons, the first in
+ * the accent colour.
+ */
 @Composable
 private fun MailDetailAction(
     text: String,
     modifier: Modifier =
         Modifier,
+    primary: Boolean = false,
     onClick: () -> Unit
 ) {
 
@@ -3282,6 +3783,10 @@ private fun MailDetailAction(
         modifier =
             modifier
                 .fillMaxHeight()
+                .background(
+                    if (primary) AccentOrange else SurfaceBlack,
+                    RoundedCornerShape(12.dp)
+                )
                 .clickable(
                     onClick =
                         onClick
@@ -3294,13 +3799,15 @@ private fun MailDetailAction(
             text =
                 text,
             color =
-                AccentOrange,
+                if (primary) BackgroundBlack else PrimaryText,
             fontSize =
-                8.5.sp,
+                10.sp,
             fontFamily =
                 InterfaceFont,
             fontWeight =
-                FontWeight.Medium
+                FontWeight.SemiBold,
+            maxLines =
+                1
         )
     }
 }
@@ -3359,6 +3866,12 @@ fun MailComposeScreen(
         )
     }
 
+    var sendFocused by remember {
+        mutableStateOf(
+            false
+        )
+    }
+
     val recipientFocusRequester =
         remember {
             FocusRequester()
@@ -3405,6 +3918,36 @@ fun MailComposeScreen(
         }
     }
 
+    /*
+     * "To Jordan": the first name of whoever it is going to.
+     */
+    val recipientName =
+        (
+                if (draft.recipientEditable) toAddress
+                else draft.toLabel.ifBlank { draft.toAddress }
+                )
+            .trim()
+            .substringBefore("@")
+            .split(" ")
+            .firstOrNull {
+                it.isNotBlank()
+            }
+            .orEmpty()
+
+    val composeKind =
+        when {
+            draft.isForward -> "Forward"
+            draft.isReplyAll -> "Reply all"
+            draft.isReply -> "Reply"
+            else -> "New email"
+        }
+
+    /*
+     * Wide enough for "Subject" on one line at the scaled text size.
+     */
+    val labelWidth =
+        58.dp
+
     Column(
         modifier =
             Modifier
@@ -3413,119 +3956,289 @@ fun MailComposeScreen(
                     BackgroundBlack
                 )
                 .padding(
-                    horizontal = 10.dp,
-                    vertical = 7.dp
+                    horizontal = DaylightPageHorizontal,
+                    vertical = DaylightPageVertical
                 )
     ) {
 
+        /*
+         * Caption and title right of the camera, round close button
+         * on the right.
+         */
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = CameraSafeStartPadding),
+                    .padding(start = DaylightCameraLane),
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
 
-            LauncherBackButton(onBack = onBack)
+            Column(
+                modifier =
+                    Modifier.weight(1f)
+            ) {
 
-            Spacer(
-                modifier = Modifier.width(8.dp)
-            )
+                Text(
+                    text = "$composeKind · Gmail",
+                    color = SecondaryText,
+                    fontSize = 9.sp,
+                    lineHeight = 11.sp,
+                    fontFamily = InterfaceFont,
+                    maxLines = 1
+                )
 
-            Text(
-                text =
-                    when {
+                Text(
+                    text =
+                        if (recipientName.isBlank()) "New email"
+                        else "To $recipientName",
+                    color = PrimaryText,
+                    fontSize = 17.sp,
+                    lineHeight = 19.sp,
+                    letterSpacing = (-0.3).sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
-                        draft.isForward ->
-                            "FORWARD"
+            Spacer(Modifier.width(8.dp))
 
-                        draft.isReplyAll ->
-                            "REPLY ALL"
-
-                        draft.isReply ->
-                            "REPLY"
-
-                        else ->
-                            "NEW MAIL"
-                    },
-                color = PrimaryText,
-                fontSize = 14.sp,
-                fontFamily = InterfaceFont,
-                fontWeight = FontWeight.Medium
+            MailRoundIconButton(
+                imageVector = Icons.Outlined.Close,
+                contentDescription = "discard",
+                background = SurfaceBlack,
+                onClick = onBack
             )
         }
 
-        Spacer(
-            modifier = Modifier.height(5.dp)
-        )
+        Spacer(Modifier.height(10.dp))
 
-        MinimalDivider()
-
-        Spacer(
-            modifier = Modifier.height(7.dp)
-        )
-
-        Text(
-            text = "TO",
-            color = TertiaryText,
-            fontSize = 7.sp,
-            fontFamily = InterfaceFont
-        )
-
-        if (
-            draft.recipientEditable
+        /*
+         * One white card: To, Subject, then the message.
+         */
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(
+                        SurfaceBlack,
+                        RoundedCornerShape(15.dp)
+                    )
+                    .padding(
+                        start = 13.dp,
+                        end = 13.dp,
+                        top = 3.dp,
+                        bottom = 11.dp
+                    )
         ) {
 
             Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(
-                            32.dp
-                        )
-                        .background(
-                            InputSurface,
-                            RoundedCornerShape(
-                                8.dp
-                            )
-                        )
-                        .border(
-                            0.75.dp,
-                            BorderGray,
-                            RoundedCornerShape(
-                                8.dp
-                            )
-                        )
-                        .padding(
-                            horizontal =
-                                8.dp
-                        ),
+                        .heightIn(min = 36.dp)
+                        .padding(vertical = 8.dp),
                 verticalAlignment =
                     Alignment.CenterVertically
             ) {
 
+                Text(
+                    text = "To",
+                    color = SecondaryText,
+                    fontSize = 9.sp,
+                    fontFamily = InterfaceFont,
+                    modifier = Modifier.width(labelWidth)
+                )
+
+                if (
+                    draft.recipientEditable
+                ) {
+
+                    BasicTextField(
+                        value =
+                            toAddress,
+                        onValueChange = {
+
+                            toAddress =
+                                it.replace(
+                                    "\n",
+                                    " "
+                                )
+                        },
+                        singleLine =
+                            true,
+                        textStyle =
+                            TextStyle(
+                                color =
+                                    PrimaryText,
+                                fontSize =
+                                    10.sp,
+                                fontFamily =
+                                    InterfaceFont
+                            ),
+                        cursorBrush =
+                            SolidColor(
+                                AccentOrange
+                            ),
+                        decorationBox = { innerTextField ->
+                            Box(
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (toAddress.isEmpty()) {
+                                    Text(
+                                        text = "name@example.com",
+                                        color = TertiaryText,
+                                        fontSize = 10.sp,
+                                        fontFamily = InterfaceFont,
+                                        maxLines = 1
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .focusRequester(
+                                    recipientFocusRequester
+                                )
+                                .onPreviewKeyEvent {
+                                        event ->
+
+                                    if (
+                                        event.type !=
+                                        KeyEventType.KeyDown
+                                    ) {
+
+                                        false
+
+                                    } else {
+
+                                        when (
+                                            event.key
+                                        ) {
+
+                                            Key.Escape -> {
+
+                                                onBack()
+                                                true
+                                            }
+
+                                            Key.Enter,
+                                            Key.DirectionDown -> {
+
+                                                bodyFocusRequester
+                                                    .requestFocus()
+                                                true
+                                            }
+
+                                            Key.Tab -> {
+
+                                                subjectFocusRequester
+                                                    .requestFocus()
+                                                true
+                                            }
+
+                                            else ->
+                                                false
+                                        }
+                                    }
+                                }
+                    )
+
+                } else {
+
+                    Text(
+                        text =
+                            draft.toLabel.ifBlank {
+                                draft.toAddress
+                            },
+                        color = AccentOrange,
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                        fontFamily = InterfaceFont,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier =
+                            Modifier
+                                .widthIn(max = 150.dp)
+                                .background(
+                                    AccentOrange.copy(alpha = 0.10f),
+                                    RoundedCornerShape(999.dp)
+                                )
+                                .padding(
+                                    horizontal = 8.dp,
+                                    vertical = 3.dp
+                                )
+                    )
+
+                    if (
+                        draft.toLabel.isNotBlank() &&
+                        !draft.toLabel.equals(
+                            draft.toAddress,
+                            ignoreCase =
+                                true
+                        )
+                    ) {
+
+                        Spacer(Modifier.width(6.dp))
+
+                        Text(
+                            text = draft.toAddress,
+                            color = TertiaryText,
+                            fontSize = 8.5.sp,
+                            fontFamily = InterfaceFont,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
+                }
+            }
+
+            DaylightRowDivider()
+
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 36.dp)
+                        .padding(vertical = 8.dp),
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+
+                Text(
+                    text = "Subject",
+                    color = SecondaryText,
+                    fontSize = 9.sp,
+                    fontFamily = InterfaceFont,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.width(labelWidth)
+                )
+
                 BasicTextField(
-                    value =
-                        toAddress,
+                    value = subject,
                     onValueChange = {
 
-                        toAddress =
+                        subject =
                             it.replace(
                                 "\n",
                                 " "
                             )
                     },
-                    singleLine =
-                        true,
+                    singleLine = true,
                     textStyle =
                         TextStyle(
-                            color =
-                                PrimaryText,
-                            fontSize =
-                                10.5.sp,
-                            fontFamily =
-                                InterfaceFont
+                            color = PrimaryText,
+                            fontSize = 10.5.sp,
+                            fontFamily = InterfaceFont,
+                            fontWeight = FontWeight.SemiBold
                         ),
                     cursorBrush =
                         SolidColor(
@@ -3533,16 +4246,15 @@ fun MailComposeScreen(
                         ),
                     modifier =
                         Modifier
-                            .fillMaxWidth()
+                            .weight(1f)
                             .focusRequester(
-                                recipientFocusRequester
+                                subjectFocusRequester
                             )
                             .onPreviewKeyEvent {
                                     event ->
 
                                 if (
-                                    event.type !=
-                                    KeyEventType.KeyDown
+                                    event.type != KeyEventType.KeyDown
                                 ) {
 
                                     false
@@ -3560,313 +4272,81 @@ fun MailComposeScreen(
                                         }
 
                                         Key.Enter,
-                                        Key.DirectionDown -> {
+                                        Key.DirectionDown,
+                                        Key.Tab -> {
 
                                             bodyFocusRequester
                                                 .requestFocus()
                                             true
                                         }
 
-                                        Key.Tab -> {
-
-                                            subjectFocusRequester
-                                                .requestFocus()
-                                            true
-                                        }
-
-                                        else ->
-                                            false
+                                        else -> false
                                     }
                                 }
                             }
                 )
             }
 
-        } else {
-
-            Text(
-                text =
-                    if (
-                        draft.toLabel.equals(
-                            draft.toAddress,
-                            ignoreCase =
-                                true
-                        )
-                    ) {
-                        draft.toAddress
-                    } else {
-                        "${draft.toLabel} · ${draft.toAddress}"
-                    },
-                color =
-                    PrimaryText,
-                fontSize =
-                    9.5.sp,
-                fontFamily =
-                    InterfaceFont,
-                maxLines =
-                    1,
-                overflow =
-                    TextOverflow.Ellipsis
-            )
-        }
-
-        Spacer(
-            modifier = Modifier.height(7.dp)
-        )
-
-        Text(
-            text = "SUBJECT",
-            color = TertiaryText,
-            fontSize = 7.sp,
-            fontFamily = InterfaceFont
-        )
-
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(32.dp)
-                    .background(
-                        InputSurface,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .border(
-                        0.75.dp,
-                        BorderGray,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(
-                        horizontal = 8.dp
-                    ),
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            BasicTextField(
-                value = subject,
-                onValueChange = {
-
-                    subject =
-                        it.replace(
-                            "\n",
-                            " "
-                        )
-                },
-                singleLine = true,
-                textStyle =
-                    TextStyle(
-                        color = PrimaryText,
-                        fontSize = 10.5.sp,
-                        fontFamily = InterfaceFont
-                    ),
-                cursorBrush =
-                    SolidColor(
-                        PrimaryText
-                    ),
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .focusRequester(
-                            subjectFocusRequester
-                        )
-                        .onPreviewKeyEvent {
-                                event ->
-
-                            if (
-                                event.type != KeyEventType.KeyDown
-                            ) {
-
-                                false
-
-                            } else {
-
-                                when (
-                                    event.key
-                                ) {
-
-                                    Key.Escape -> {
-
-                                        onBack()
-                                        true
-                                    }
-
-                                    Key.Enter,
-                                    Key.DirectionDown,
-                                    Key.Tab -> {
-
-                                        bodyFocusRequester
-                                            .requestFocus()
-                                        true
-                                    }
-
-                                    else -> false
-                                }
-                            }
-                        }
-            )
-        }
-
-        Spacer(
-            modifier = Modifier.height(7.dp)
-        )
-
-        Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            Text(
-                text =
-                    "MESSAGE",
-                color =
-                    TertiaryText,
-                fontSize =
-                    7.sp,
-                fontFamily =
-                    InterfaceFont
-            )
+            DaylightRowDivider()
 
             if (
                 draft.isForward &&
                 draft.forwardedBody.isNotBlank()
             ) {
 
-                Spacer(
-                    modifier =
-                        Modifier.width(
-                            6.dp
-                        )
-                )
-
                 Text(
-                    text =
-                        "original included",
-                    color =
-                        TertiaryText,
-                    fontSize =
-                        6.5.sp,
-                    fontFamily =
-                        InterfaceFont
+                    text = "Original message included",
+                    color = TertiaryText,
+                    fontSize = 8.sp,
+                    fontFamily = InterfaceFont,
+                    modifier = Modifier.padding(top = 6.dp)
                 )
             }
-        }
 
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .background(
-                        InputSurface,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .border(
-                        0.75.dp,
-                        BorderGray,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(8.dp)
-        ) {
-
-            BasicTextField(
-                value = body,
-                onValueChange = {
-
-                    body = it
-                },
-                textStyle =
-                    TextStyle(
-                        color = PrimaryText,
-                        fontSize = 10.sp,
-                        fontFamily = InterfaceFont,
-                        lineHeight = 14.sp
-                    ),
-                cursorBrush =
-                    SolidColor(
-                        PrimaryText
-                    ),
+            Box(
                 modifier =
                     Modifier
-                        .fillMaxSize()
-                        .focusRequester(
-                            bodyFocusRequester
-                        )
-                        .onPreviewKeyEvent {
-                                event ->
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(top = 10.dp)
+            ) {
 
-                            if (
-                                event.type != KeyEventType.KeyDown
-                            ) {
+                BasicTextField(
+                    value = body,
+                    onValueChange = {
 
-                                false
+                        body = it
+                    },
+                    textStyle =
+                        TextStyle(
+                            color = PrimaryText,
+                            fontSize = 10.5.sp,
+                            fontFamily = InterfaceFont,
+                            lineHeight = 15.5.sp
+                        ),
+                    cursorBrush =
+                        SolidColor(
+                            AccentOrange
+                        ),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .focusRequester(
+                                bodyFocusRequester
+                            )
+                            .onPreviewKeyEvent {
+                                    event ->
 
-                            } else {
-
-                                when (
-                                    event.key
+                                if (
+                                    event.type != KeyEventType.KeyDown
                                 ) {
 
-                                    Key.Escape -> {
+                                    false
 
-                                        onBack()
-                                        true
-                                    }
-
-                                    Key.Tab,
-                                    Key.DirectionDown -> {
-
-                                        sendFocusRequester
-                                            .requestFocus()
-                                        true
-                                    }
-
-                                    else -> false
-                                }
-                            }
-                        }
-            )
-        }
-
-        Spacer(
-            modifier = Modifier.height(6.dp)
-        )
-
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(30.dp)
-                    .background(
-                        SurfaceBlack,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .border(
-                        0.75.dp,
-                        BorderGray,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .focusRequester(
-                        sendFocusRequester
-                    )
-                    .focusable()
-                    .onPreviewKeyEvent {
-                            event ->
-
-                        if (
-                            event.type != KeyEventType.KeyDown
-                        ) {
-
-                            false
-
-                        } else {
-
-                            when (
-                                event.key
-                            ) {
-
-                                Key.Enter -> {
+                                } else if (
+                                    event.key == Key.Enter &&
+                                    event.isCtrlPressed
+                                ) {
 
                                     onSend(
                                         toAddress,
@@ -3874,62 +4354,157 @@ fun MailComposeScreen(
                                         body
                                     )
                                     true
+
+                                } else {
+
+                                    when (
+                                        event.key
+                                    ) {
+
+                                        Key.Escape -> {
+
+                                            onBack()
+                                            true
+                                        }
+
+                                        Key.Tab,
+                                        Key.DirectionDown -> {
+
+                                            sendFocusRequester
+                                                .requestFocus()
+                                            true
+                                        }
+
+                                        else -> false
+                                    }
                                 }
-
-                                Key.DirectionUp -> {
-
-                                    bodyFocusRequester
-                                        .requestFocus()
-                                    true
-                                }
-
-                                Key.Escape -> {
-
-                                    onBack()
-                                    true
-                                }
-
-                                else -> false
                             }
-                        }
-                    }
-                    .clickable {
-
-                        onSend(
-                            toAddress,
-                            subject,
-                            body
-                        )
-                    },
-            verticalAlignment =
-                Alignment.CenterVertically,
-            horizontalArrangement =
-                Arrangement.Center
-        ) {
-
-            Text(
-                text = "SEND",
-                color = AccentOrange,
-                fontSize = 9.sp,
-                fontFamily = InterfaceFont,
-                fontWeight = FontWeight.Bold
-            )
+                )
+            }
         }
 
-        Spacer(
-            modifier = Modifier.height(3.dp)
-        )
+        Spacer(Modifier.height(10.dp))
 
-        if (
-            statusText.isNotBlank()
+        /*
+         * Footer: the send status, if any, and the Send button.
+         */
+        Row(
+            modifier =
+                Modifier.fillMaxWidth(),
+            verticalAlignment =
+                Alignment.CenterVertically
         ) {
+
+            /*
+             * Only the send status ("sending…", an error) shows here;
+             * the space keeps Send on the right.
+             */
             Text(
                 text = statusText,
                 color = AccentOrange,
-                fontSize = 6.5.sp,
+                fontSize = 8.5.sp,
+                lineHeight = 10.5.sp,
                 fontFamily = InterfaceFont,
-                maxLines = 1
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
+
+            Spacer(Modifier.width(8.dp))
+
+            Row(
+                modifier =
+                    Modifier
+                        .height(38.dp)
+                        .border(
+                            width = if (sendFocused) 2.dp else 0.dp,
+                            color = if (sendFocused) PrimaryText else Color.Transparent,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .background(
+                            AccentOrange,
+                            RoundedCornerShape(12.dp)
+                        )
+                        .focusRequester(
+                            sendFocusRequester
+                        )
+                        .onFocusChanged {
+                            sendFocused =
+                                it.isFocused
+                        }
+                        .focusable()
+                        .onPreviewKeyEvent {
+                                event ->
+
+                            if (
+                                event.type != KeyEventType.KeyDown
+                            ) {
+
+                                false
+
+                            } else {
+
+                                when (
+                                    event.key
+                                ) {
+
+                                    Key.Enter -> {
+
+                                        onSend(
+                                            toAddress,
+                                            subject,
+                                            body
+                                        )
+                                        true
+                                    }
+
+                                    Key.DirectionUp -> {
+
+                                        bodyFocusRequester
+                                            .requestFocus()
+                                        true
+                                    }
+
+                                    Key.Escape -> {
+
+                                        onBack()
+                                        true
+                                    }
+
+                                    else -> false
+                                }
+                            }
+                        }
+                        .clickable {
+
+                            onSend(
+                                toAddress,
+                                subject,
+                                body
+                            )
+                        }
+                        .padding(horizontal = 16.dp),
+                verticalAlignment =
+                    Alignment.CenterVertically,
+                horizontalArrangement =
+                    Arrangement.spacedBy(6.dp)
+            ) {
+
+                Text(
+                    text = "Send",
+                    color = BackgroundBlack,
+                    fontSize = 10.5.sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Icon(
+                    imageVector = Icons.Outlined.ArrowUpward,
+                    contentDescription = null,
+                    tint = BackgroundBlack,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
         }
     }
 }

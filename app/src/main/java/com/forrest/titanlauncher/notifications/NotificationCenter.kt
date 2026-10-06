@@ -836,10 +836,56 @@ object NotificationCenter {
         val conversation =
             runCatching {
 
-                androidx.core.app.NotificationCompat.MessagingStyle
-                    .extractMessagingStyleFromNotification(
-                        notification
-                    )
+                val style =
+                    androidx.core.app.NotificationCompat.MessagingStyle
+                        .extractMessagingStyleFromNotification(
+                            notification
+                        )
+
+                /*
+                 * Who "you" are in this conversation. Messages (and
+                 * most apps) put your own replies under this person
+                 * rather than leaving the sender empty, so a message
+                 * is yours when its sender is empty or matches it.
+                 */
+                val user =
+                    style?.user
+
+                fun isFromUser(
+                    person: androidx.core.app.Person?
+                ): Boolean {
+
+                    if (person == null) return true
+                    if (user == null) return false
+
+                    val personKey = person.key
+                    val userKey = user.key
+
+                    if (
+                        !personKey.isNullOrBlank() &&
+                        !userKey.isNullOrBlank()
+                    ) {
+                        return personKey == userKey
+                    }
+
+                    val personUri = person.uri
+                    val userUri = user.uri
+
+                    if (
+                        !personUri.isNullOrBlank() &&
+                        !userUri.isNullOrBlank()
+                    ) {
+                        return personUri == userUri
+                    }
+
+                    val userName =
+                        user.name?.toString().orEmpty()
+
+                    return userName.isNotBlank() &&
+                            person.name?.toString() == userName
+                }
+
+                style
                     ?.messages
                     ?.map { message ->
 
@@ -858,7 +904,9 @@ object NotificationCenter {
                             timestamp =
                                 message.timestamp,
                             fromUser =
-                                message.person == null
+                                isFromUser(
+                                    message.person
+                                )
                         )
                     }
                     ?.filter {

@@ -63,9 +63,19 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TitanLauncher">
 
+        <!--
+            The app entry ("Prompt Launcher" in other launchers and in the
+            Titan's PTT app picker). Opens onboarding until setup is
+            done, then the prompt over the current app. See
+            DaylightEntryActivity.kt.
+        -->
         <activity
-            android:name=".OnboardingActivity"
-            android:exported="true">
+            android:name=".DaylightEntryActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -73,6 +83,10 @@
             </intent-filter>
 
         </activity>
+
+        <activity
+            android:name=".OnboardingActivity"
+            android:exported="true" />
 
         <activity
             android:name=".MainActivity"
@@ -97,6 +111,31 @@
         </activity>
 
         <!--
+            Prompt over other apps. Handling ASSIST is what lets the
+            user pick Daylight under Settings > Apps > Default apps >
+            Digital assistant app; the assist gesture (hold Home) then
+            opens the Daylight prompt over the current app. Its own
+            empty task (taskAffinity="") so finishing it returns to
+            that app rather than to the launcher.
+        -->
+        <activity
+            android:name=".PromptAnywhereActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Daylight.Overlay"
+            android:windowSoftInputMode="adjustResize">
+
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+        </activity>
+
+
+        <!--
             Diagnostic screen for mapping the physical keyboard.
             Reached by typing "keys" in the command bar.
         -->
@@ -104,6 +143,22 @@
             android:name=".KeyProbeActivity"
             android:exported="false"
             android:launchMode="singleTop" />
+
+        <!--
+            The Titan's PTT key (Shortcut keys > Func1 > PTT key, PTT
+            app: Daylight) sends these instead of opening the app.
+            Key down opens the prompt over the current app.
+        -->
+        <receiver
+            android:name=".PttKeyReceiver"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.PTT.down" />
+                <action android:name="android.intent.action.PTT.up" />
+            </intent-filter>
+
+        </receiver>
 
         <receiver
             android:name=".messages.SmsReceiver"

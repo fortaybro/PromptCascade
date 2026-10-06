@@ -2,4 +2,36 @@
 <resources>
 
     <style name="Theme.TitanLauncher" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+        Prompt over other apps: the app underneath stays visible (and
+        is blurred on Android 12+, see values-v31). Fades in and out,
+        draws under the status bar so there's no black strip.
+    -->
+    <style name="Theme.Daylight.Overlay" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowAnimationStyle">@style/Daylight.OverlayAnimation</item>
+    </style>
+
+    <style name="Daylight.OverlayAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/daylight_fade_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/daylight_stay</item>
+        <item name="android:activityCloseEnterAnimation">@anim/daylight_stay</item>
+        <item name="android:activityCloseExitAnimation">@anim/daylight_fade_out</item>
+        <item name="android:taskOpenEnterAnimation">@anim/daylight_fade_in</item>
+        <item name="android:taskOpenExitAnimation">@anim/daylight_stay</item>
+        <item name="android:taskCloseEnterAnimation">@anim/daylight_stay</item>
+        <item name="android:taskCloseExitAnimation">@anim/daylight_fade_out</item>
+        <item name="android:taskToFrontEnterAnimation">@anim/daylight_fade_in</item>
+        <item name="android:taskToFrontExitAnimation">@anim/daylight_stay</item>
+        <item name="android:taskToBackEnterAnimation">@anim/daylight_stay</item>
+        <item name="android:taskToBackExitAnimation">@anim/daylight_fade_out</item>
+    </style>
 </resources>

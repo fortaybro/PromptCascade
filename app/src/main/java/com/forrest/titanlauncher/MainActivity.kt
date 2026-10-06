@@ -33,6 +33,7 @@ import androidx.compose.animation.togetherWith
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +58,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -262,6 +264,30 @@ mutableStateOf(
  * synthesising a heavier Regular. Font() only holds the resource id,
  * so nothing is read until something is drawn with the family.
  */
+/*
+ * Bricolage Grotesque, Daylight's typeface, bundled from
+ * app/src/main/res/font (SIL Open Font License, see licenses/).
+ */
+internal val BricolageFamily =
+    FontFamily(
+        Font(
+            R.font.bricolage_regular,
+            FontWeight.Normal
+        ),
+        Font(
+            R.font.bricolage_medium,
+            FontWeight.Medium
+        ),
+        Font(
+            R.font.bricolage_semibold,
+            FontWeight.SemiBold
+        ),
+        Font(
+            R.font.bricolage_bold,
+            FontWeight.Bold
+        )
+    )
+
 internal val PoppinsFamily =
     FontFamily(
         Font(
@@ -281,7 +307,7 @@ internal val PoppinsFamily =
  */
 internal var InterfaceFont by
 mutableStateOf<FontFamily>(
-    PoppinsFamily
+    BricolageFamily
 )
 
 internal var HomeButtonSurface by
@@ -360,6 +386,14 @@ mutableStateOf(
     true
 )
 
+/*
+ * The command legend above the prompt (Settings > Commands box).
+ */
+internal var ShowCommandHints by
+mutableStateOf(
+    true
+)
+
 internal var SearchChipChrome by
 mutableStateOf(
     true
@@ -397,6 +431,15 @@ mutableStateOf(
     true
 )
 
+/*
+ * A one-time choice from the "write in" chips: "" writes in Daylight,
+ * a package name writes in that mail app, null follows the setting.
+ */
+internal var MailWriteInOnce by
+mutableStateOf<String?>(
+    null
+)
+
 internal var MailComposeAppPackage by
 mutableStateOf(
     ""
@@ -419,8 +462,11 @@ mutableStateOf(
     Color(0xFF6E6E6E)
 )
 
+/*
+ * Daylight orange: an hour lost to distracting apps.
+ */
 internal val ProductivityRed =
-    Color(0xFFFF3B30)
+    Color(0xFFE8662B)
 
 internal val LauncherCommandRed =
     Color(0xFFFF3B30)
@@ -458,6 +504,7 @@ internal fun accentColorFor(
     accent: LauncherAccent
 ): Color {
     return when (accent) {
+        LauncherAccent.COBALT -> Color(0xFF2E4BF0)
         LauncherAccent.ORANGE -> Color(0xFFFF6438)
         LauncherAccent.RED -> Color(0xFFFF4D4D)
         LauncherAccent.YELLOW -> Color(0xFFFFC83D)
@@ -496,32 +543,39 @@ internal fun paletteFor(
         mode
     ) {
 
+        /*
+         * DAYLIGHT
+         *
+         * Dark and light are Daylight's own pair: a cool near-black
+         * with dark grey cards, and a cool light grey with white
+         * cards. The other themes are kept as extras.
+         */
         LauncherThemeMode.DARK ->
             LauncherPalette(
                 isDark = true,
-                background = Color(0xFF000000),
-                surface = Color(0xFF0B0B0B),
-                input = Color(0xFF171717),
-                border = Color(0xFF242424),
-                raised = Color(0xFF333333),
-                primaryText = Color(0xFFF1F1F1),
-                secondaryText = Color(0xFF999999),
-                tertiaryText = Color(0xFF666666),
-                pendingDot = Color(0xFF6E6E6E)
+                background = Color(0xFF0F1216),
+                surface = Color(0xFF1B1F26),
+                input = Color(0xFF1B1F26),
+                border = Color(0xFF2A3038),
+                raised = Color(0xFF3D444E),
+                primaryText = Color(0xFFEEF1F4),
+                secondaryText = Color(0xFFA0A8B3),
+                tertiaryText = Color(0xFF7D8691),
+                pendingDot = Color(0xFF3D444E)
             )
 
         LauncherThemeMode.LIGHT ->
             LauncherPalette(
                 isDark = false,
-                background = Color(0xFFFAF9F6),
-                surface = Color(0xFFF2F0EC),
-                input = Color(0xFFE9E6E0),
-                border = Color(0xFFD5D1CA),
-                raised = Color(0xFFCFC9BF),
-                primaryText = Color(0xFF171717),
-                secondaryText = Color(0xFF66625D),
-                tertiaryText = Color(0xFF8B8780),
-                pendingDot = Color(0xFFBFBBB4)
+                background = Color(0xFFEDF0F3),
+                surface = Color(0xFFFFFFFF),
+                input = Color(0xFFFFFFFF),
+                border = Color(0xFFD5DAE0),
+                raised = Color(0xFFC3CAD3),
+                primaryText = Color(0xFF11141A),
+                secondaryText = Color(0xFF4D5562),
+                tertiaryText = Color(0xFF6B7480),
+                pendingDot = Color(0xFFC3CAD3)
             )
 
         LauncherThemeMode.NAVY ->
@@ -656,16 +710,55 @@ internal fun commandSurfaceColorFor(
     }
 }
 
+/*
+ * The theme actually drawn: with "auto" on, Daylight light or dark
+ * following the phone's dark mode, otherwise the chosen theme.
+ */
+internal fun effectiveThemeMode(
+    settings: LauncherSettings,
+    systemDark: Boolean
+): LauncherThemeMode =
+    if (
+        settings.followSystemTheme
+    ) {
+        if (systemDark) LauncherThemeMode.DARK else LauncherThemeMode.LIGHT
+    } else {
+        settings.themeMode
+    }
+
 internal fun applyLauncherAppearance(
-    settings: LauncherSettings
+    settings: LauncherSettings,
+    systemDark: Boolean = false
 ) {
-    AccentOrange =
-        accentColorFor(
-            settings.accent
+    val themeMode =
+        effectiveThemeMode(
+            settings,
+            systemDark
         )
+
+    val isDaylightPair =
+        themeMode == LauncherThemeMode.LIGHT ||
+                themeMode == LauncherThemeMode.DARK
+
+    AccentOrange =
+        if (
+            settings.accent == LauncherAccent.COBALT &&
+            paletteFor(themeMode).isDark
+        ) {
+            /*
+             * Cobalt is too dark to read on a dark background, so
+             * dark mode uses a lighter periwinkle of the same hue.
+             */
+            Color(0xFF8C9BFF)
+        } else {
+            accentColorFor(
+                settings.accent
+            )
+        }
 
     InterfaceFont =
         when (settings.interfaceFont) {
+            LauncherInterfaceFont.BRICOLAGE -> BricolageFamily
             LauncherInterfaceFont.MONO -> FontFamily.Monospace
             LauncherInterfaceFont.SANS -> FontFamily.SansSerif
             LauncherInterfaceFont.SERIF -> FontFamily.Serif
@@ -674,7 +767,7 @@ internal fun applyLauncherAppearance(
 
     val palette =
         paletteFor(
-            settings.themeMode
+            themeMode
         )
 
     BackgroundBlack = palette.background
@@ -711,19 +804,19 @@ internal fun applyLauncherAppearance(
     HomeButtonSurface =
         homeSurfaceColorFor(
             settings.appButtonSurface,
-            settings.themeMode
+            themeMode
         )
 
     HomeInfoCardSurface =
         homeSurfaceColorFor(
             settings.infoCardSurface,
-            settings.themeMode
+            themeMode
         )
 
     HomeCommandSurface =
         commandSurfaceColorFor(
             settings.commandSurface,
-            settings.themeMode
+            themeMode
         )
 
     HomeButtonIconSizeDp =
@@ -735,9 +828,9 @@ internal fun applyLauncherAppearance(
 
     HomeButtonLabelSizeSp =
         when (settings.buttonLabelSize) {
-            HomeElementSize.SMALL -> 8.5f
-            HomeElementSize.NORMAL -> 9.5f
-            HomeElementSize.LARGE -> 10.5f
+            HomeElementSize.SMALL -> 9.5f
+            HomeElementSize.NORMAL -> 10.5f
+            HomeElementSize.LARGE -> 11.5f
         }
 
     HomeButtonCornerRadiusDp =
@@ -753,6 +846,7 @@ internal fun applyLauncherAppearance(
     ShowHomeCalendarCard = settings.showCalendarCard
     ShowHomeAttentionCard = settings.showAttentionCard
     ShowSearchTargetPicker = settings.showSearchTargetPicker
+    ShowCommandHints = settings.showCommandHints
     SearchChipChrome = settings.searchChipChrome
     SearchChipClaude = settings.searchChipClaude
     SearchChipApps = settings.searchChipApps
@@ -786,7 +880,17 @@ internal fun applyLauncherAppearance(
      * the light-mode branch and gave them dark grey muted text on a
      * dark background. The palette knows whether a theme is dark.
      */
-    if (palette.isDark) {
+    /*
+     * Daylight's light and dark palettes already carry tuned cool
+     * greys, so standard contrast keeps them as they are.
+     */
+    if (
+        isDaylightPair &&
+        settings.readabilityContrast == ReadabilityContrast.STANDARD &&
+        !settings.dimSecondaryText
+    ) {
+        // Keep the palette's own secondary and tertiary text.
+    } else if (palette.isDark) {
         when (settings.readabilityContrast) {
             ReadabilityContrast.STANDARD -> {
                 SecondaryText =
@@ -1211,7 +1315,12 @@ class MainActivity :
 
 @Composable
 fun TitanApp(
-    homeRequestVersion: Int
+    homeRequestVersion: Int,
+    /*
+     * True when hosted by PromptAnywhereActivity: only the command
+     * layer is drawn, over whatever app the user was in.
+     */
+    assistOverlay: Boolean = false
 ) {
 
     val context =
@@ -1491,9 +1600,17 @@ fun TitanApp(
             }
         }
 
-    LaunchedEffect(launcherSettings) {
+    /*
+     * Read here so "auto" switches the moment the phone's dark mode
+     * changes.
+     */
+    val systemDarkTheme =
+        isSystemInDarkTheme()
+
+    LaunchedEffect(launcherSettings, systemDarkTheme) {
         applyLauncherAppearance(
-            launcherSettings
+            launcherSettings,
+            systemDarkTheme
         )
     }
 
@@ -1968,6 +2085,7 @@ fun TitanApp(
         }
 
         if (
+            !assistOverlay &&
             android.os.Build.VERSION.SDK_INT >=
             android.os.Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
@@ -2907,6 +3025,16 @@ fun TitanApp(
 
     LaunchedEffect(Unit) {
 
+        /*
+         * First-run permission prompts belong to the launcher, not to
+         * the prompt drawn over another app.
+         */
+        if (
+            assistOverlay
+        ) {
+            return@LaunchedEffect
+        }
+
         if (
             !hasContactsPermission
         ) {
@@ -2930,6 +3058,7 @@ fun TitanApp(
     ) {
 
         if (
+            !assistOverlay &&
             hasContactsPermission &&
             !hasCalendarPermission
         ) {
@@ -3177,10 +3306,13 @@ fun TitanApp(
     fun RenderHomeScreen(
         commandOverlayOnly: Boolean = false,
         autoFocusCommandInput: Boolean = true,
-        onCommandOverlayActiveChange: (Boolean) -> Unit = {}
+        onCommandOverlayActiveChange: (Boolean) -> Unit = {},
+        promptAlwaysOpen: Boolean = false
     ) {
 
         TitanHomeScreen(
+            homeRequestVersion =
+                homeRequestVersion,
             contactRepository =
                 contactRepository,
             smsDatabase =
@@ -3393,13 +3525,24 @@ fun TitanApp(
                  * A mail app chosen in settings writes the email
                  * there instead of in Prompt Launcher.
                  */
+                /*
+                 * The "write in" chips on the address list can
+                 * override the setting for this one email.
+                 */
+                val composeTarget =
+                    MailWriteInOnce
+                        ?: MailComposeAppPackage
+
+                MailWriteInOnce =
+                    null
+
                 if (
-                    MailComposeAppPackage.isNotBlank()
+                    composeTarget.isNotBlank()
                 ) {
                     if (
                         !composeInMailApp(
                             context,
-                            MailComposeAppPackage,
+                            composeTarget,
                             emailContact.emailAddress
                         )
                     ) {
@@ -3549,7 +3692,9 @@ fun TitanApp(
             autoFocusCommandInput =
                 autoFocusCommandInput,
             onCommandOverlayActiveChange =
-                onCommandOverlayActiveChange
+                onCommandOverlayActiveChange,
+            promptAlwaysOpen =
+                promptAlwaysOpen
         )
     }
 
@@ -3592,6 +3737,212 @@ fun TitanApp(
         currentConversation != null ||
                 currentNote != null ||
                 mailComposeDraft != null
+
+    /*
+     * Prompt over other apps (PromptAnywhereActivity, the assist
+     * entry point). Only the command layer is drawn, on a light scrim
+     * over the app the user came from. A quick command finishes and
+     * drops the user back in that app; anything that needs a full
+     * Daylight screen hands off to MainActivity instead.
+     */
+    if (
+        assistOverlay
+    ) {
+
+        var assistPromptActive by remember {
+            mutableStateOf(
+                false
+            )
+        }
+
+        var assistPromptWasActive by remember {
+            mutableStateOf(
+                false
+            )
+        }
+
+        var assistStatusAtActivation by remember {
+            mutableStateOf(
+                ""
+            )
+        }
+
+        /*
+         * A command asked for a launcher screen (hub, notes, settings,
+         * messages, a conversation, mail...). Those only exist in the
+         * full launcher, so open Daylight and close the overlay.
+         */
+        LaunchedEffect(
+            useGlobalCommandLayer
+        ) {
+
+            if (
+                useGlobalCommandLayer
+            ) {
+
+                runCatching {
+                    activity.startActivity(
+                        Intent(
+                            context,
+                            MainActivity::class.java
+                        ).apply {
+                            addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK
+                            )
+                        }
+                    )
+                }
+
+                activity.finish()
+            }
+        }
+
+        /*
+         * The prompt went from active to idle with a fresh "✓ ..."
+         * confirmation: the command ran. Leave the confirmation up
+         * briefly, then return to the other app. Clearing the prompt
+         * by hand (no new confirmation) or an error message keeps the
+         * overlay open so the user can try again.
+         */
+        LaunchedEffect(
+            assistPromptActive,
+            statusText
+        ) {
+
+            if (
+                !assistPromptActive &&
+                assistPromptWasActive &&
+                statusText.startsWith("✓") &&
+                statusText != assistStatusAtActivation
+            ) {
+
+                delay(
+                    900
+                )
+
+                activity.finish()
+            }
+        }
+
+        /*
+         * Registered before the command layer, so its own back
+         * handling (locked contact, assistant answer, pickers) still
+         * wins while one of those is open.
+         */
+        BackHandler {
+            activity.finish()
+        }
+
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .onPreviewKeyEvent {
+                            event ->
+
+                        /*
+                         * Esc with nothing open goes straight back to
+                         * the other app. While the prompt or an
+                         * overlay is open, the key passes through to
+                         * it (and falls back to Back if unhandled).
+                         */
+                        if (
+                            event.key == Key.Escape &&
+                            !assistPromptActive
+                        ) {
+
+                            if (
+                                event.type == KeyEventType.KeyUp
+                            ) {
+                                activity.finish()
+                            }
+
+                            true
+                        } else if (
+                            /*
+                             * Backspace on an empty prompt closes it
+                             * too. Checked on key down, before the
+                             * field sees it, so the press that deletes
+                             * the last letter doesn't also close.
+                             */
+                            event.key == Key.Backspace &&
+                            event.type == KeyEventType.KeyDown &&
+                            !assistPromptActive
+                        ) {
+
+                            activity.finish()
+
+                            true
+                        } else {
+                            false
+                        }
+                    }
+        ) {
+
+            /*
+             * No scrim of its own: the window blurs the app behind
+             * (Theme.Daylight.Overlay) and the prompt frosts it, the
+             * same look as typing on the home screen.
+             */
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(
+                            assistPromptActive
+                        ) {
+
+                            detectTapGestures {
+
+                                if (
+                                    !assistPromptActive
+                                ) {
+                                    activity.finish()
+                                }
+                            }
+                        }
+            )
+
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding()
+            ) {
+
+                RenderHomeScreen(
+                    commandOverlayOnly =
+                        true,
+                    autoFocusCommandInput =
+                        true,
+                    promptAlwaysOpen =
+                        true,
+                    onCommandOverlayActiveChange = {
+                            active ->
+
+                        if (
+                            active &&
+                            !assistPromptActive
+                        ) {
+
+                            assistStatusAtActivation =
+                                statusText
+
+                            assistPromptWasActive =
+                                true
+                        }
+
+                        assistPromptActive =
+                            active
+                    }
+                )
+
+
+            }
+        }
+
+        return
+    }
 
     Box(
         modifier =

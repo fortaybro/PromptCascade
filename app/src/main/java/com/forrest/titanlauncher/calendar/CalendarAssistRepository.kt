@@ -272,7 +272,7 @@ class CalendarAssistRepository {
     suspend fun loadUpcomingAgenda(
         accessToken: String,
         calendarIds: List<String>,
-        days: Long = 8
+        days: Long = com.forrest.titanlauncher.ai.AssistantPayloadLimits.AGENDA_DAYS.toLong()
     ): List<CalendarAssistEvent> {
 
         val zone =

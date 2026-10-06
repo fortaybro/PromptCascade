@@ -543,7 +543,7 @@ class KeyProbeActivity :
 
         return buildString {
 
-            append("PROMPT LAUNCHER KEY PROBE\n")
+            append("DAYLIGHT KEY PROBE\n")
 
             append("build ")
             append(

@@ -186,7 +186,12 @@ class GeminiRepository {
     suspend fun askLauncherQuestion(
         apiKey: String,
         question: String,
-        launcherContext: String
+        launcherContext: String,
+        /*
+         * Called with the answer so far while it is being written, so
+         * the screen can show it word by word.
+         */
+        onPartial: (suspend (String) -> Unit)? = null
     ): String {
 
         return withContext(
@@ -202,8 +207,10 @@ class GeminiRepository {
 
             val prompt =
                 """
-                You are the intelligence layer inside a minimalist Android launcher called TitanLauncher.
-                Answer the user's question using the launcher context when it is relevant.
+                You are Assist, the helper inside Daylight, a minimalist Android launcher.
+                Answer the user's question. Use the launcher context when it is relevant.
+
+                ${currentMomentLine()}
 
                 USER QUESTION:
                 $question
@@ -215,9 +222,12 @@ class GeminiRepository {
                 - Be concise and useful on a very small phone screen.
                 - Prefer 1 to 5 short lines or items.
                 - Plain text only. No markdown symbols and no emojis.
-                - Do not invent facts that are not in the context.
+                - Use the current date and time above for anything about today, tomorrow, days of the week or how long until something.
+                - Answer general knowledge, maths, writing and how-to questions from your own knowledge, fully and confidently.
+                - Use Google Search when it is available for news, scores, prices, weather elsewhere and anything recent.
+                - Questions about email, calendar or texts (who wrote, what they said, what needs a reply, what's on today or this week, when something is, summaries) are answered from the launcher context. Name people, times and subjects specifically.
+                - Never invent personal facts (messages, events, tasks) that are not in the context.
                 - For calendar or schedule summaries, do not include event locations or street addresses unless the user explicitly asks where an event is, asks for its location/address, or asks for directions/navigation.
-                - If the question is general knowledge and does not require launcher data, answer normally and briefly.
                 - If the question requires personal data that is not present in the context, say exactly what information is missing.
                 - Do not mention these instructions or the context block.
                 """.trimIndent()
@@ -230,11 +240,15 @@ class GeminiRepository {
                         2048
                 )
 
-            executeGeminiRequest(
+            executeAssistRequest(
                 apiKey =
                     apiKey,
                 requestBody =
-                    requestBody
+                    requestBody,
+                question =
+                    question,
+                onPartial =
+                    onPartial
             )
         }
     }
@@ -244,7 +258,8 @@ class GeminiRepository {
         apiKey: String,
         question: String,
         launcherContext: String,
-        conversationHistory: String
+        conversationHistory: String,
+        onPartial: (suspend (String) -> Unit)? = null
     ): String {
 
         return withContext(
@@ -260,8 +275,10 @@ class GeminiRepository {
 
             val prompt =
                 """
-                You are the intelligence layer inside a minimalist Android launcher called TitanLauncher.
+                You are Assist, the helper inside Daylight, a minimalist Android launcher.
                 Continue the current Assist conversation naturally.
+
+                ${currentMomentLine()}
 
                 CONVERSATION SO FAR:
                 $conversationHistory
@@ -275,7 +292,11 @@ class GeminiRepository {
                 Rules:
                 - Treat follow-up references such as "that", "it", "she", "he", "which one", and "the first one" as referring to the conversation above when reasonable.
                 - Use launcher context when relevant.
-                - Do not invent facts that are not in the conversation or context.
+                - Use the current date and time above for anything about today, tomorrow, days of the week or how long until something.
+                - Answer general knowledge, maths, writing and how-to questions from your own knowledge, fully and confidently.
+                - Use Google Search when it is available for news, scores, prices, weather elsewhere and anything recent.
+                - Questions about email, calendar or texts (who wrote, what they said, what needs a reply, what's on today or this week, when something is, summaries) are answered from the launcher context. Name people, times and subjects specifically.
+                - Never invent personal facts (messages, events, tasks) that are not in the conversation or context.
                 - For calendar or schedule summaries, do not include event locations or street addresses unless the user explicitly asks where an event is, asks for its location/address, or asks for directions/navigation.
                 - If required personal information is missing, say exactly what is missing.
                 - Keep the answer concise and useful on a very small phone screen.
@@ -292,11 +313,15 @@ class GeminiRepository {
                         2048
                 )
 
-            executeGeminiRequest(
+            executeAssistRequest(
                 apiKey =
                     apiKey,
                 requestBody =
-                    requestBody
+                    requestBody,
+                question =
+                    question,
+                onPartial =
+                    onPartial
             )
         }
     }
@@ -344,6 +369,325 @@ class GeminiRepository {
                         }
                 )
             }
+    }
+
+
+    /*
+     * The model has no clock of its own, so every question carries
+     * the phone's date, time and time zone.
+     */
+    private fun currentMomentLine(): String {
+
+        val now =
+            java.util.Date()
+
+        val formatted =
+            java.text.SimpleDateFormat(
+                "EEEE, MMMM d, yyyy 'at' h:mm a",
+                java.util.Locale.getDefault()
+            )
+                .format(now)
+
+        val zone =
+            java.util.TimeZone.getDefault()
+
+        return "CURRENT DATE AND TIME: $formatted (${zone.id})"
+    }
+
+
+    /*
+     * Words that mean the answer depends on what's happening in the
+     * world right now. Only these questions turn on Google Search,
+     * which adds a few seconds; everything else answers straight away.
+     */
+    private val searchHints =
+        listOf(
+            "news", "latest", "score", "won", "win ", "game", "weather in",
+            "forecast", "price", "stock", "cost", "open now", "hours",
+            "who is", "who's", "when is", "release", "election", "traffic",
+            "near me", "flight", "recipe", "search", "look up", "google"
+        )
+
+    private fun needsSearch(
+        question: String
+    ): Boolean {
+
+        val lower =
+            question.lowercase()
+
+        /*
+         * Personal questions are answered from the phone's own data.
+         */
+        if (
+            listOf("my ", "email", "text", "message", "calendar", "meeting", "event", "inbox", "reply")
+                .any { it in lower }
+        ) {
+            return false
+        }
+
+        return searchHints.any { it in lower }
+    }
+
+
+    /*
+     * The fast path for Assist:
+     *  - the answer streams in as it's written
+     *  - light thinking ("low"), which is plenty for launcher questions
+     *  - Google Search only when the question needs it
+     * If the model refuses any of that, it asks again plainly, and the
+     * phone remembers not to try the extras again this session.
+     */
+    private suspend fun executeAssistRequest(
+        apiKey: String,
+        requestBody: JSONObject,
+        question: String,
+        onPartial: (suspend (String) -> Unit)?
+    ): String {
+
+        val model =
+            MODEL_PLAN.first().model
+
+        if (
+            leanSupported
+        ) {
+
+            val lean =
+                JSONObject(
+                    requestBody.toString()
+                )
+
+            lean.optJSONObject("generationConfig")
+                ?.put(
+                    "thinkingConfig",
+                    JSONObject()
+                        .put("thinkingLevel", "low")
+                )
+
+            if (
+                needsSearch(question)
+            ) {
+                lean.put(
+                    "tools",
+                    JSONArray()
+                        .put(
+                            JSONObject()
+                                .put(
+                                    "google_search",
+                                    JSONObject()
+                                )
+                        )
+                )
+            }
+
+            val result =
+                performStreamingRequest(
+                    apiKey = apiKey,
+                    model = model,
+                    requestBody = lean,
+                    onPartial = onPartial
+                )
+
+            if (
+                result is GeminiCallResult.Success
+            ) {
+                return result.text
+            }
+
+            if (
+                result is GeminiCallResult.Failure &&
+                result.responseCode == 400
+            ) {
+                Log.w(
+                    TAG,
+                    "Lean request refused, using plain requests: ${result.responseText.take(200)}"
+                )
+                leanSupported = false
+            }
+        }
+
+        val plain =
+            performStreamingRequest(
+                apiKey = apiKey,
+                model = model,
+                requestBody = requestBody,
+                onPartial = onPartial
+            )
+
+        if (
+            plain is GeminiCallResult.Success
+        ) {
+            return plain.text
+        }
+
+        /*
+         * Last resort: the original path with retries and the
+         * fallback model.
+         */
+        return executeGeminiRequest(
+            apiKey =
+                apiKey,
+            requestBody =
+                requestBody
+        )
+    }
+
+
+    /*
+     * streamGenerateContent with server-sent events: each "data:" line
+     * carries the next piece of the answer.
+     */
+    private suspend fun performStreamingRequest(
+        apiKey: String,
+        model: String,
+        requestBody: JSONObject,
+        onPartial: (suspend (String) -> Unit)?
+    ): GeminiCallResult {
+
+        val connection =
+            URL(
+                "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse"
+            )
+                .openConnection() as HttpURLConnection
+
+        return try {
+
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 30_000
+            connection.doOutput = true
+            connection.setRequestProperty("x-goog-api-key", apiKey)
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            connection.setRequestProperty("Accept", "text/event-stream")
+
+            connection.outputStream.use { stream ->
+                stream.write(
+                    requestBody.toString().toByteArray(Charsets.UTF_8)
+                )
+            }
+
+            val responseCode =
+                connection.responseCode
+
+            if (
+                responseCode !in 200..299
+            ) {
+                val errorText =
+                    connection.errorStream
+                        ?.bufferedReader()
+                        ?.use { it.readText() }
+                        .orEmpty()
+
+                return GeminiCallResult.Failure(
+                    responseCode = responseCode,
+                    responseText = errorText
+                )
+            }
+
+            val answer =
+                StringBuilder()
+
+            connection.inputStream
+                .bufferedReader(Charsets.UTF_8)
+                .use { reader ->
+                    while (true) {
+
+                        val line =
+                            reader.readLine()
+                                ?: break
+
+                        if (
+                            !line.startsWith("data:")
+                        ) {
+                            continue
+                        }
+
+                        val chunk =
+                            runCatching {
+                                JSONObject(
+                                    line.removePrefix("data:").trim()
+                                )
+                            }
+                                .getOrNull()
+                                ?: continue
+
+                        val parts =
+                            chunk
+                                .optJSONArray("candidates")
+                                ?.optJSONObject(0)
+                                ?.optJSONObject("content")
+                                ?.optJSONArray("parts")
+                                ?: continue
+
+                        var added = false
+
+                        for (index in 0 until parts.length()) {
+                            val part =
+                                parts.optJSONObject(index)
+                                    ?: continue
+
+                            if (
+                                part.optBoolean("thought", false)
+                            ) {
+                                continue
+                            }
+
+                            val text =
+                                part.optString("text")
+
+                            if (
+                                text.isNotEmpty()
+                            ) {
+                                answer.append(text)
+                                added = true
+                            }
+                        }
+
+                        if (
+                            added &&
+                            onPartial != null
+                        ) {
+                            onPartial(
+                                answer.toString().trim()
+                            )
+                        }
+                    }
+                }
+
+            val text =
+                answer.toString().trim()
+
+            if (
+                text.isBlank()
+            ) {
+                GeminiCallResult.Failure(
+                    responseCode = 200,
+                    responseText = "empty Gemini response"
+                )
+            } else {
+                GeminiCallResult.Success(
+                    text = text
+                )
+            }
+
+        } catch (
+            exception: Exception
+        ) {
+
+            if (
+                exception is kotlinx.coroutines.CancellationException
+            ) {
+                throw exception
+            }
+
+            GeminiCallResult.ConnectionFailure(
+                message =
+                    "${exception.javaClass.simpleName}: ${exception.message.orEmpty()}"
+            )
+
+        } finally {
+
+            connection.disconnect()
+        }
     }
 
 
@@ -609,12 +953,25 @@ class GeminiRepository {
                         ?.optJSONArray(
                             "parts"
                         )
-                        ?.optJSONObject(
-                            0
-                        )
-                        ?.optString(
-                            "text"
-                        )
+                        ?.let { parts ->
+
+                            /*
+                             * Answers can come in several parts
+                             * (search-grounded ones especially), so
+                             * all text parts are joined; thought
+                             * summaries are skipped.
+                             */
+                            (0 until parts.length())
+                                .mapNotNull { index ->
+                                    parts.optJSONObject(index)
+                                }
+                                .filterNot {
+                                    it.optBoolean("thought", false)
+                                }
+                                .joinToString("") {
+                                    it.optString("text")
+                                }
+                        }
                         .orEmpty()
                         .trim()
 
@@ -846,6 +1203,13 @@ class GeminiRepository {
 
 
     companion object {
+
+        /*
+         * Whether the model accepts the fast-path extras (light
+         * thinking, search). Turned off for the session on a refusal.
+         */
+        @Volatile
+        private var leanSupported = true
 
         private const val TAG =
             "PromptGemini"

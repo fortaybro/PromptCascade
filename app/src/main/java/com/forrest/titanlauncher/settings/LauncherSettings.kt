@@ -57,6 +57,10 @@ enum class LauncherSecondaryTextColor {
 }
 
 enum class LauncherAccent {
+    /*
+     * Daylight's own blue, and the default.
+     */
+    COBALT,
     ORANGE,
     RED,
     YELLOW,
@@ -67,6 +71,10 @@ enum class LauncherAccent {
 }
 
 enum class LauncherInterfaceFont {
+    /*
+     * Bricolage Grotesque, bundled. Daylight's default face.
+     */
+    BRICOLAGE,
     MONO,
     SANS,
     SERIF,
@@ -122,18 +130,23 @@ enum class HomeCornerStyle {
 }
 
 data class LauncherSettings(
-    val themeMode: LauncherThemeMode = LauncherThemeMode.DARK,
+    val themeMode: LauncherThemeMode = LauncherThemeMode.LIGHT,
+    /*
+     * Daylight "auto": light or dark following the phone's own dark
+     * mode. While on, themeMode is ignored.
+     */
+    val followSystemTheme: Boolean = true,
     val textColor: LauncherTextColor = LauncherTextColor.DEFAULT,
     val secondaryTextColor: LauncherSecondaryTextColor =
         LauncherSecondaryTextColor.DEFAULT,
-    val accent: LauncherAccent = LauncherAccent.ORANGE,
-    val interfaceFont: LauncherInterfaceFont = LauncherInterfaceFont.MONO,
+    val accent: LauncherAccent = LauncherAccent.COBALT,
+    val interfaceFont: LauncherInterfaceFont = LauncherInterfaceFont.BRICOLAGE,
     val appButtonSurface: HomeSurfaceTone = HomeSurfaceTone.BLACK,
     val infoCardSurface: HomeSurfaceTone = HomeSurfaceTone.BLACK,
     val commandSurface: CommandSurfaceTone = CommandSurfaceTone.DARK,
     val buttonIconSize: HomeElementSize = HomeElementSize.NORMAL,
     val buttonLabelSize: HomeElementSize = HomeElementSize.NORMAL,
-    val buttonCorners: HomeCornerStyle = HomeCornerStyle.SOFT,
+    val buttonCorners: HomeCornerStyle = HomeCornerStyle.ROUND,
     val showWeather: Boolean = true,
     /*
      * Show temperatures in Celsius instead of Fahrenheit.
@@ -146,6 +159,11 @@ data class LauncherSettings(
      * way it did before the picker existed.
      */
     val showSearchTargetPicker: Boolean = true,
+    /*
+     * The command legend ("commands" / "word commands") above the
+     * prompt while typing a command.
+     */
+    val showCommandHints: Boolean = true,
     /*
      * Which chips the search picker offers. With every one switched
      * off the picker behaves as if it were off.

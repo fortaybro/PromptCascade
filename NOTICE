@@ -25,7 +25,13 @@ Prompt Launcher is not affiliated with or endorsed by Katoa Apps.
 This product bundles the Poppins font (app/src/main/res/font/),
 Copyright 2020 The Poppins Project Authors
 (https://github.com/itfoundry/Poppins), licensed under the SIL Open Font
-License, Version 1.1 (https://openfontlicense.org).
+License, Version 1.1. The full license is in licenses/Poppins-OFL.txt.
 
 Weather data is provided by Open-Meteo (https://open-meteo.com) under
 the Creative Commons Attribution 4.0 license (CC BY 4.0).
+
+This product bundles the Bricolage Grotesque font (app/src/main/res/font/
+bricolage_*.ttf), Copyright 2022 The Bricolage Grotesque Project Authors
+(https://github.com/ateliertriay/bricolage), licensed under the SIL Open
+Font License, Version 1.1. The full license is in
+licenses/BricolageGrotesque-OFL.txt.

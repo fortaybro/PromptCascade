@@ -22,15 +22,19 @@ data class AssistantSharing(
  */
 object AssistantPayloadLimits {
 
-    const val CONTEXT_EMAILS = 5
-    const val CONTEXT_EMAIL_PREVIEW_CHARS = 150
+    const val CONTEXT_EMAILS = 15
+    const val CONTEXT_EMAIL_PREVIEW_CHARS = 200
 
     const val PRIORITIZE_EMAILS = 15
     const val PRIORITIZE_EMAIL_PREVIEW_CHARS = 250
 
     const val LATEST_TEXT_CHARS = 160
 
-    const val AGENDA_DAYS = 8
+    const val TEXT_THREADS = 8
+    const val TEXT_MESSAGES_PER_THREAD = 6
+    const val TEXT_SCAN_ROWS = 300
+
+    const val AGENDA_DAYS = 14
 }
 
 /*
@@ -47,10 +51,10 @@ object AssistantSharingDisclosure {
         "Your next event (time, title, location) and the next ${AssistantPayloadLimits.AGENDA_DAYS} days of events."
 
     const val TEXTS =
-        "Your unread text count and your latest incoming text (sender plus the first ${AssistantPayloadLimits.LATEST_TEXT_CHARS} characters)."
+        "Your unread text count and your ${AssistantPayloadLimits.TEXT_THREADS} most recent conversations, both sides (the last ${AssistantPayloadLimits.TEXT_MESSAGES_PER_THREAD} messages each, first ${AssistantPayloadLimits.LATEST_TEXT_CHARS} characters), plus chats still showing as notifications."
 
     const val MAIL =
-        "Your important-unread count and your ${AssistantPayloadLimits.CONTEXT_EMAILS} newest emails (sender, subject, first ${AssistantPayloadLimits.CONTEXT_EMAIL_PREVIEW_CHARS} characters). " +
+        "Your important-unread count, your ${AssistantPayloadLimits.CONTEXT_EMAILS} newest emails (sender, subject, first ${AssistantPayloadLimits.CONTEXT_EMAIL_PREVIEW_CHARS} characters) and any email notifications on screen. " +
                 "Asking which emails need replies sends up to ${AssistantPayloadLimits.PRIORITIZE_EMAILS} emails (first ${AssistantPayloadLimits.PRIORITIZE_EMAIL_PREVIEW_CHARS} characters each)."
 
     const val DESTINATION =
@@ -127,15 +131,43 @@ fun buildAssistantLauncherContext(
     nextEventLocation: () -> String?,
     calendarAgenda: () -> String,
     latestIncomingText: () -> Pair<String, String>?,
-    mailMessages: List<MailMessage>
+    mailMessages: List<MailMessage>,
+    /*
+     * Recent conversations, both sides. Empty falls back to just the
+     * latest incoming text.
+     */
+    recentTexts: () -> String = { "" },
+    /*
+     * Email notifications from mail apps (Spark, Outlook, Gmail),
+     * for mail that isn't in the Gmail list.
+     */
+    mailNotifications: () -> String = { "" }
 ): String {
+
+    val switchedOff =
+        listOfNotNull(
+            "calendar".takeIf { !sharing.calendar },
+            "texts".takeIf { !sharing.texts },
+            "mail".takeIf { !sharing.mail }
+        )
+
+    /*
+     * Tells the model how to answer when a question needs a source
+     * that isn't shared, instead of a vague "I don't have access".
+     */
+    val offNote =
+        if (switchedOff.isEmpty()) {
+            ""
+        } else {
+            "Not shared: ${switchedOff.joinToString(", ")}. If the question needs one of these, say it's switched off and that it can be turned on by typing geminisetup in the prompt."
+        }
 
     if (
         !sharing.calendar &&
         !sharing.texts &&
         !sharing.mail
     ) {
-        return "No personal context shared. Answer from the question alone."
+        return "No personal context shared. $offNote"
     }
 
     return buildString {
@@ -173,12 +205,27 @@ fun buildAssistantLauncherContext(
                 "Unread texts: $unreadTextCount"
             )
 
-            latestIncomingText()
-                ?.let { (sender, body) ->
-                    appendLine(
-                        "Latest incoming text from $sender: ${body.take(AssistantPayloadLimits.LATEST_TEXT_CHARS)}"
-                    )
-                }
+            val conversations =
+                recentTexts()
+
+            if (
+                conversations.isNotBlank()
+            ) {
+                appendLine(
+                    "Recent text conversations (newest first):"
+                )
+
+                appendLine(
+                    conversations
+                )
+            } else {
+                latestIncomingText()
+                    ?.let { (sender, body) ->
+                        appendLine(
+                            "Latest incoming text from $sender: ${body.take(AssistantPayloadLimits.LATEST_TEXT_CHARS)}"
+                        )
+                    }
+            }
         }
 
         if (
@@ -215,14 +262,46 @@ fun buildAssistantLauncherContext(
                                 AssistantPayloadLimits.CONTEXT_EMAIL_PREVIEW_CHARS
                             )
 
+                    val received =
+                        java.text.SimpleDateFormat(
+                            "EEE MMM d h:mm a",
+                            java.util.Locale.getDefault()
+                        )
+                            .format(
+                                java.util.Date(message.timestamp)
+                            )
+
                     appendLine(
-                        "${index + 1}. From ${message.sender}; subject ${message.subject}; unread ${message.unread}; important ${message.important}; preview $preview"
+                        "${index + 1}. Received $received from ${message.sender} <${message.senderEmail}>; subject ${message.subject}; unread ${message.unread}; important ${message.important}; preview $preview"
                     )
                 }
         }
 
-        appendLine(
-            "Only the sources above were shared; others are switched off."
-        )
+        if (
+            sharing.mail
+        ) {
+            val notified =
+                mailNotifications()
+
+            if (
+                notified.isNotBlank()
+            ) {
+                appendLine(
+                    "Email notifications on the phone:"
+                )
+
+                appendLine(
+                    notified
+                )
+            }
+        }
+
+        if (
+            offNote.isNotBlank()
+        ) {
+            appendLine(
+                offNote
+            )
+        }
     }
 }

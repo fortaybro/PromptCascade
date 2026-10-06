@@ -69,6 +69,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CameraAlt
@@ -97,6 +99,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.blur
@@ -614,6 +617,33 @@ fun LocalAssistantScreen(
         }
     }
 
+    var inputFocused by
+    remember {
+        mutableStateOf(
+            false
+        )
+    }
+
+    fun sendInput() {
+
+        val text =
+            inputText
+                .trim()
+
+        if (
+            text.isNotBlank() &&
+            !isThinking
+        ) {
+
+            inputText =
+                ""
+
+            onSend(
+                text
+            )
+        }
+    }
+
     Column(
         modifier =
             Modifier
@@ -623,50 +653,78 @@ fun LocalAssistantScreen(
                 )
                 .padding(
                     horizontal =
-                        12.dp,
+                        DaylightPageHorizontal,
                     vertical =
-                        10.dp
+                        DaylightPageVertical
                 )
     ) {
 
+        /*
+         * Daylight header: "Assist" right of the camera, what's
+         * answering underneath, and a round close button.
+         */
         Row(
             modifier =
-                Modifier.fillMaxWidth(),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start =
+                            DaylightCameraLane
+                    ),
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
 
-            LauncherBackButton(
-                onBack =
-                    onBack
-            )
+            Column(
+                modifier =
+                    Modifier.weight(1f)
+            ) {
+
+                Text(
+                    text = "Assist",
+                    color = PrimaryText,
+                    fontSize = 24.sp,
+                    lineHeight = 25.sp,
+                    letterSpacing = (-0.7).sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+
+                Spacer(
+                    modifier =
+                        Modifier.height(2.dp)
+                )
+
+                Text(
+                    text =
+                        if (isThinking) "Thinking…"
+                        else "Ask anything · Gemini",
+                    color =
+                        if (isThinking) AccentOrange
+                        else SecondaryText,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    fontFamily = InterfaceFont,
+                    maxLines = 1
+                )
+            }
 
             Spacer(
                 modifier =
-                    Modifier.width(
-                        8.dp
-                    )
+                    Modifier.width(8.dp)
             )
 
-            Text(
-                text =
-                    "ai assist",
-                color =
-                    PrimaryText,
-                fontSize =
-                    14.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Medium
+            MailRoundIconButton(
+                imageVector = Icons.Outlined.Close,
+                contentDescription = "close",
+                onClick = onBack
             )
         }
 
         Spacer(
             modifier =
-                Modifier.height(
-                    7.dp
-                )
+                Modifier.height(12.dp)
         )
 
         LazyColumn(
@@ -680,7 +738,7 @@ fun LocalAssistantScreen(
                     ),
             verticalArrangement =
                 Arrangement.spacedBy(
-                    10.dp
+                    12.dp
                 ),
             contentPadding =
                 PaddingValues(
@@ -696,130 +754,114 @@ fun LocalAssistantScreen(
                     index,
                     turn ->
 
+                val thinkingThisTurn =
+                    isThinking &&
+                            index ==
+                            turns.lastIndex &&
+                            turn.answer ==
+                            "THINKING..."
+
                 Column(
                     modifier =
-                        Modifier.fillMaxWidth()
+                        Modifier.fillMaxWidth(),
+                    verticalArrangement =
+                        Arrangement.spacedBy(6.dp)
                 ) {
 
+                    /*
+                     * Your question: accent bubble on the right, the
+                     * same as your texts in quick reply.
+                     */
                     Row(
                         modifier =
                             Modifier.fillMaxWidth(),
                         horizontalArrangement =
                             Arrangement.End
                     ) {
-
-                        /*
-                         * Same bubble treatment as a sent SMS: accent
-                         * fill, dark text, right aligned.
-                         */
                         Text(
-                            text =
-                                turn.question,
-                            color =
-                                Color.Black,
-                            fontSize =
-                                11.8.sp,
-                            lineHeight =
-                                15.5.sp,
-                            fontFamily =
-                                InterfaceFont,
-                            textAlign =
-                                TextAlign.Start,
+                            text = turn.question,
+                            color = BackgroundBlack,
+                            fontSize = 11.sp,
+                            lineHeight = 14.5.sp,
+                            fontFamily = InterfaceFont,
+                            fontWeight = FontWeight.Medium,
                             modifier =
                                 Modifier
-                                    .widthIn(
-                                        max =
-                                            255.dp
-                                    )
+                                    .widthIn(max = 250.dp)
                                     .background(
-                                        color =
-                                            AccentOrange,
-                                        shape =
-                                            RoundedCornerShape(
-                                                10.dp
-                                            )
+                                        AccentOrange,
+                                        RoundedCornerShape(
+                                            topStart = 16.dp,
+                                            topEnd = 16.dp,
+                                            bottomStart = 16.dp,
+                                            bottomEnd = 5.dp
+                                        )
                                     )
                                     .padding(
-                                        horizontal =
-                                            9.dp,
-                                        vertical =
-                                            6.dp
+                                        horizontal = 12.dp,
+                                        vertical = 8.dp
                                     )
                         )
                     }
 
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                5.dp
-                            )
-                    )
-
+                    /*
+                     * The answer: a card on the left with a small
+                     * "Assist" label, like a message from someone.
+                     */
                     Row(
                         modifier =
                             Modifier.fillMaxWidth(),
                         horizontalArrangement =
                             Arrangement.Start
                     ) {
-
-                        val thinkingThisTurn =
-                            isThinking &&
-                                    index ==
-                                    turns.lastIndex &&
-                                    turn.answer ==
-                                    "THINKING..."
-
-                        /*
-                         * Same bubble treatment as a received SMS.
-                         */
-                        Text(
-                            text =
-                                if (
-                                    thinkingThisTurn
-                                ) {
-                                    "thinking..."
-                                } else {
-                                    turn.answer
-                                },
-                            color =
-                                if (
-                                    thinkingThisTurn
-                                ) {
-                                    Color(0xFF6B6B6B)
-                                } else {
-                                    Color.Black
-                                },
-                            fontSize =
-                                11.8.sp,
-                            lineHeight =
-                                15.5.sp,
-                            fontFamily =
-                                InterfaceFont,
-                            textAlign =
-                                TextAlign.Start,
+                        Column(
                             modifier =
                                 Modifier
-                                    .widthIn(
-                                        max =
-                                            255.dp
-                                    )
+                                    .widthIn(max = 280.dp)
                                     .background(
-                                        color =
-                                            Color(
-                                                0xFFE3E3E3
-                                            ),
-                                        shape =
-                                            RoundedCornerShape(
-                                                10.dp
-                                            )
+                                        SurfaceBlack,
+                                        RoundedCornerShape(
+                                            topStart = 16.dp,
+                                            topEnd = 16.dp,
+                                            bottomStart = 5.dp,
+                                            bottomEnd = 16.dp
+                                        )
                                     )
                                     .padding(
-                                        horizontal =
-                                            9.dp,
-                                        vertical =
-                                            6.dp
+                                        horizontal = 12.dp,
+                                        vertical = 9.dp
                                     )
-                        )
+                        ) {
+
+                            Text(
+                                text = "ASSIST",
+                                color = AccentOrange,
+                                fontSize = 7.5.sp,
+                                lineHeight = 9.sp,
+                                letterSpacing = 0.9.sp,
+                                fontFamily = InterfaceFont,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(3.dp)
+                            )
+
+                            if (
+                                thinkingThisTurn
+                            ) {
+                                AssistThinkingDots()
+                            } else {
+                                Text(
+                                    text = turn.answer,
+                                    color = PrimaryText,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.5.sp,
+                                    fontFamily = InterfaceFont
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -828,63 +870,44 @@ fun LocalAssistantScreen(
         Spacer(
             modifier =
                 Modifier.height(
-                    7.dp
+                    8.dp
                 )
         )
 
+        /*
+         * The follow-up field: a rounded card with a placeholder and
+         * a round accent send button, like quick reply.
+         */
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(
-                        38.dp
+                    .heightIn(
+                        min = 46.dp
                     )
                     .background(
-                        InputSurface,
+                        SurfaceBlack,
                         RoundedCornerShape(
-                            9.dp
+                            16.dp
                         )
                     )
                     .border(
                         width =
-                            0.9.dp,
+                            if (inputFocused) 1.25.dp else 0.dp,
                         color =
-                            AccentOrange.copy(
-                                alpha =
-                                    0.72f
-                            ),
+                            if (inputFocused) AccentOrange else Color.Transparent,
                         shape =
                             RoundedCornerShape(
-                                9.dp
+                                16.dp
                             )
                     )
                     .padding(
-                        horizontal =
-                            8.dp
+                        start = 14.dp,
+                        end = 6.dp
                     ),
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
-
-            Text(
-                text =
-                    ">",
-                color =
-                    AccentOrange,
-                fontSize =
-                    15.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.width(
-                        6.dp
-                    )
-            )
 
             BasicTextField(
                 value =
@@ -902,6 +925,10 @@ fun LocalAssistantScreen(
                         .focusRequester(
                             focusRequester
                         )
+                        .onFocusChanged {
+                            inputFocused =
+                                it.isFocused
+                        }
                         .onPreviewKeyEvent {
                                 event ->
 
@@ -920,23 +947,7 @@ fun LocalAssistantScreen(
 
                                     Key.Enter -> {
 
-                                        val text =
-                                            inputText
-                                                .trim()
-
-                                        if (
-                                            text.isNotBlank() &&
-                                            !isThinking
-                                        ) {
-
-                                            inputText =
-                                                ""
-
-                                            onSend(
-                                                text
-                                            )
-                                        }
-
+                                        sendInput()
                                         true
                                     }
 
@@ -958,19 +969,120 @@ fun LocalAssistantScreen(
                         color =
                             PrimaryText,
                         fontSize =
-                            11.5.sp,
+                            11.sp,
                         fontFamily =
-                            InterfaceFont,
-                        fontWeight =
-                            FontWeight.Medium
+                            InterfaceFont
                     ),
                 cursorBrush =
                     SolidColor(
                         AccentOrange
-                    )
+                    ),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (
+                            inputText.isEmpty()
+                        ) {
+                            Text(
+                                text =
+                                    if (turns.isEmpty()) "Ask anything"
+                                    else "Ask a follow-up",
+                                color = TertiaryText,
+                                fontSize = 11.sp,
+                                fontFamily = InterfaceFont,
+                                maxLines = 1
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+
+            Spacer(
+                modifier =
+                    Modifier.width(8.dp)
+            )
+
+            Box(
+                modifier =
+                    Modifier
+                        .size(34.dp)
+                        .background(
+                            if (
+                                inputText.isNotBlank() &&
+                                !isThinking
+                            ) {
+                                AccentOrange
+                            } else {
+                                AccentOrange.copy(alpha = 0.35f)
+                            },
+                            CircleShape
+                        )
+                        .clickable {
+                            sendInput()
+                        },
+                contentAlignment =
+                    Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ArrowUpward,
+                    contentDescription = "send",
+                    tint = BackgroundBlack,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+/*
+ * Three dots that pulse in turn while Gemini is working.
+ */
+@Composable
+private fun AssistThinkingDots() {
+
+    val transition =
+        rememberInfiniteTransition(
+            label = "assistThinking"
+        )
+
+    val phase by
+    transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 3f,
+        animationSpec =
+            infiniteRepeatable(
+                animation =
+                    tween(
+                        durationMillis = 1200
+                    ),
+                repeatMode =
+                    RepeatMode.Restart
+            ),
+        label = "assistThinkingPhase"
+    )
+
+    Row(
+        modifier =
+            Modifier.padding(vertical = 4.dp),
+        horizontalArrangement =
+            Arrangement.spacedBy(4.dp)
+    ) {
+        repeat(3) { dot ->
+
+            val active =
+                phase.toInt() == dot
+
+            Box(
+                modifier =
+                    Modifier
+                        .size(6.dp)
+                        .background(
+                            if (active) AccentOrange
+                            else SecondaryText.copy(alpha = 0.35f),
+                            CircleShape
+                        )
             )
         }
-
     }
 }
 

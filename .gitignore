@@ -16,8 +16,7 @@ local.properties
 
 # Build output and IDE state
 /app/build
-release/
-*.hprof
+/release
 *.apk
 *.aab
 .kotlin
@@ -29,3 +28,6 @@ release/
 *.p12
 keystore.properties
 google-services.json
+
+# Build output kept out of iCloud (see build.gradle.kts)
+build.nosync

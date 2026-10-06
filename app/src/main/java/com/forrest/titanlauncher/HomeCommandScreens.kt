@@ -77,6 +77,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CameraAlt
@@ -213,6 +215,7 @@ import com.forrest.titanlauncher.weather.WeatherSnapshot
 import com.forrest.titanlauncher.weather.temperatureText
 import com.forrest.titanlauncher.ui.theme.TitanLauncherTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -280,7 +283,17 @@ fun TitanHomeScreen(
     commandOverlayOnly: Boolean = false,
     autoFocusCommandInput: Boolean = true,
     showSearchTargetPicker: Boolean = ShowSearchTargetPicker,
-    onCommandOverlayActiveChange: (Boolean) -> Unit = {}
+    onCommandOverlayActiveChange: (Boolean) -> Unit = {},
+    /*
+     * The prompt over other apps: the prompt bar and search chips are
+     * up from the start, cursor blinking, before anything is typed.
+     */
+    promptAlwaysOpen: Boolean = false,
+    /*
+     * Goes up each time the Home button is pressed while Daylight is
+     * already in front.
+     */
+    homeRequestVersion: Int = 0
 ) {
 
     var commandText by remember {
@@ -337,6 +350,14 @@ fun TitanHomeScreen(
 
     var assistantThinking by remember {
         mutableStateOf(false)
+    }
+
+    /*
+     * The Gemini request in flight, cancelled when Assist is closed
+     * so a late answer can't reopen it.
+     */
+    var assistantJob by remember {
+        mutableStateOf<Job?>(null)
     }
 
     var assistantNavigationTarget by remember {
@@ -1181,12 +1202,42 @@ fun TitanHomeScreen(
     }
 
     /*
+     * Home button: close Assist and anything half-typed in the
+     * prompt, so it lands on a clean home screen.
+     */
+    LaunchedEffect(
+        homeRequestVersion
+    ) {
+        if (
+            homeRequestVersion > 0
+        ) {
+            assistantJob?.cancel()
+            assistantJob = null
+            assistantQuestion = null
+            assistantAnswer = null
+            assistantTurns = emptyList()
+            assistantNavigationTarget = null
+            assistantThinking = false
+            emailContactMatches = emptyList()
+            lockedTextContact = null
+            commandText = ""
+        }
+    }
+
+    /*
      * The prompt counts as open while a contact is locked, even before
      * any message text is typed.
      */
-    val promptOpen =
+    /*
+     * Something is actually typed (or a contact locked in).
+     */
+    val promptTyped =
         commandText.isNotBlank() ||
                 lockedTextContact != null
+
+    val promptOpen =
+        promptTyped ||
+                promptAlwaysOpen
 
     fun performResolvedContactCommand(
         command: Command,
@@ -1516,6 +1567,44 @@ fun TitanHomeScreen(
 
         val latest =
             latestUnread
+
+        /*
+         * Straight into the conversation in Android Messages: the
+         * newest text notification's own link opens that exact thread
+         * (chats and groups included).
+         */
+        val newestTextNotification =
+            liveNotifications
+                .filter {
+                    it.messages.isNotEmpty() &&
+                            it.messages.lastOrNull()?.fromUser != true
+                }
+                .maxByOrNull {
+                    it.timestamp
+                }
+
+        if (
+            newestTextNotification != null &&
+            (latest == null || newestTextNotification.timestamp >= latest.timestamp)
+        ) {
+            NotificationCenter.openNotification(
+                key = newestTextNotification.key,
+                context = context
+            )
+            return
+        }
+
+        /*
+         * A stored text: open its thread in Messages by number.
+         */
+        if (
+            latest != null &&
+            handOffMessagingIfNotDefault(
+                latest.phoneNumber
+            )
+        ) {
+            return
+        }
 
         if (
             latest == null
@@ -3467,7 +3556,7 @@ fun TitanHomeScreen(
                 )
 
                 setStatusText(
-                    "ENABLE PROMPT LAUNCHER USAGE ACCESS"
+                    "ENABLE DAYLIGHT USAGE ACCESS"
                 )
             } catch (
                 _: Exception
@@ -4188,7 +4277,7 @@ fun TitanHomeScreen(
                 return
             }
 
-            val launcherContext =
+            val buildLauncherContext: () -> String = {
                 buildAssistantLauncherContext(
                     sharing =
                         assistantSharingStore.load(),
@@ -4229,8 +4318,21 @@ fun TitanHomeScreen(
                             }
                     },
                     mailMessages =
-                        mailMessages
+                        mailMessages,
+                    recentTexts = {
+                        buildRecentTextsContext(
+                            context,
+                            contactRepository,
+                            hasContactsPermission
+                        )
+                    },
+                    mailNotifications = {
+                        buildMailNotificationsContext(
+                            context
+                        )
+                    }
                 )
+            }
 
             assistantAnswer =
                 "THINKING..."
@@ -4250,7 +4352,7 @@ fun TitanHomeScreen(
                 ""
             )
 
-            scope.launch {
+            assistantJob = scope.launch {
                 val response =
                     geminiRepository.askLauncherQuestion(
                         apiKey =
@@ -4258,7 +4360,18 @@ fun TitanHomeScreen(
                         question =
                             question,
                         launcherContext =
-                            launcherContext
+                            withContext(Dispatchers.IO) { buildLauncherContext() },
+                        onPartial = { partial ->
+                            withContext(Dispatchers.Main) {
+                                assistantTurns =
+                                    listOf(
+                                        AssistantTurn(
+                                            question = question,
+                                            answer = partial
+                                        )
+                                    )
+                            }
+                        }
                     )
 
                 assistantAnswer =
@@ -4810,12 +4923,34 @@ fun TitanHomeScreen(
                             .removePrefix("/")
                             .trim()
 
+                    /*
+                     * "email sar": the name after "email", until it
+                     * becomes a typed address.
+                     */
+                    trimmed.startsWith("email ", ignoreCase = true) &&
+                            !trimmed.contains("@") ->
+                        trimmed
+                            .substring(6)
+                            .trim()
+
                     else ->
                         ""
                 }
             }
         }
             .trim()
+
+    /*
+     * The prompt reads "email <name>": suggestions are people with an
+     * email address, shown with the address under the name.
+     */
+    val inlineEmailMode =
+        commandText
+            .trim()
+            .startsWith(
+                "email ",
+                ignoreCase = true
+            )
 
     /*
      * "." used to narrow the app list inline. Apps are now searched
@@ -4997,10 +5132,59 @@ fun TitanHomeScreen(
     val inlineContactMatches =
         remember(
             inlineContactQuery,
+            inlineEmailMode,
             hasContactsPermission,
             lockedTextContact
         ) {
             if (
+                inlineEmailMode &&
+                hasContactsPermission &&
+                inlineContactQuery.isNotBlank()
+            ) {
+                runCatching {
+                    contactRepository
+                        .findEmailContacts(
+                            searchName = inlineContactQuery,
+                            limit = 16
+                        )
+                }
+                    .getOrDefault(
+                        emptyList()
+                    )
+                    .filter { contact ->
+                        contact.name
+                            .trim()
+                            .split(" ")
+                            .any { word ->
+                                word.startsWith(
+                                    inlineContactQuery.trim(),
+                                    ignoreCase = true
+                                )
+                            } ||
+                                contact.name
+                                    .trim()
+                                    .startsWith(
+                                        inlineContactQuery.trim(),
+                                        ignoreCase = true
+                                    )
+                    }
+                    .distinctBy {
+                        it.emailAddress.lowercase()
+                    }
+                    .take(
+                        4
+                    )
+                    /*
+                     * Shown with the same rows as texting; the
+                     * address rides in the detail line.
+                     */
+                    .map {
+                        Contact(
+                            name = it.name,
+                            phoneNumber = it.emailAddress
+                        )
+                    }
+            } else if (
                 lockedTextContact == null &&
                 hasContactsPermission &&
                 inlineContactQuery.isNotBlank()
@@ -5037,6 +5221,30 @@ fun TitanHomeScreen(
     fun chooseInlineContact(
         contact: Contact
     ) {
+
+        if (
+            inlineEmailMode
+        ) {
+
+            /*
+             * The detail line holds the email address here.
+             */
+            onComposeMail(
+                EmailContact(
+                    name = contact.name,
+                    emailAddress = contact.phoneNumber
+                )
+            )
+
+            commandText =
+                ""
+
+            inlineContactSelectionIndex =
+                0
+
+            return
+        }
+
         val command =
             inlineContactCommand
 
@@ -5241,7 +5449,7 @@ fun TitanHomeScreen(
         ) {
 
             onCommandOverlayActiveChange(
-                promptOpen ||
+                promptTyped ||
                         showAppSearch ||
                         showCommandHelp ||
                         showCalendarSetup ||
@@ -5318,7 +5526,7 @@ fun TitanHomeScreen(
             !showAppSearch &&
             !showCalendarSetup
         ) {
-            3.5.dp
+            6.dp
         } else {
             0.dp
         }
@@ -5436,508 +5644,543 @@ fun TitanHomeScreen(
                             BackgroundBlack
                         )
                         .padding(
-                            horizontal =
-                                10.dp,
-                            vertical =
-                                5.dp
+                            start = DaylightPageHorizontal,
+                            end = DaylightPageHorizontal,
+                            top = 10.dp,
+                            bottom = 10.dp
                         )
             ) {
 
                 /*
-                 * Give the Titan 2 Elite camera cutout a little more
-                 * vertical breathing room. The space is reclaimed
-                 * below the second info card so the app-button grid
-                 * stays in the same vertical position.
+                 * DAYLIGHT HEADER (mockup C-Home)
+                 *
+                 * The date sits right of the Titan 2 Elite camera in
+                 * the top-left corner; the header buttons sit on the
+                 * right, ending with the quick-reply pill (bolt and
+                 * the number waiting). Below them, the clock ring is
+                 * centred with the time and weather inside.
                  */
-                Spacer(
-                    modifier =
-                        Modifier.height(
-                            12.dp
-                        )
-                )
+                val usageAccessGranted =
+                    remember(
+                        productivityHours
+                    ) {
 
-                Box(
+                        runCatching {
+                            usageStatsRepository
+                                .hasUsageAccess()
+                        }
+                            .getOrDefault(
+                                true
+                            )
+                    }
+
+                val currentHourOfDay =
+                    remember(
+                        currentDateTime
+                    ) {
+                        java.util.Calendar
+                            .getInstance()
+                            .apply {
+                                time =
+                                    currentDateTime
+                            }
+                            .get(
+                                java.util.Calendar.HOUR_OF_DAY
+                            )
+                    }
+
+                /*
+                 * "Thu, Oct 1".
+                 */
+                val headerDate =
+                    SimpleDateFormat(
+                        "EEE, MMM d",
+                        Locale.getDefault()
+                    )
+                        .format(
+                            currentDateTime
+                        )
+
+                val quickReplyWaiting =
+                    quickReplyEntries.count {
+                        it.unread
+                    }
+
+                Row(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(
-                                min = 72.dp
+                            .height(
+                                28.dp
                             )
                             .blur(
                                 commandFocusBlur
-                            )
+                            ),
+                    verticalAlignment =
+                        Alignment.CenterVertically
                 ) {
-                    Column(
+
+                    Text(
+                        text =
+                            headerDate,
+                        color =
+                            SecondaryText,
+                        fontSize =
+                            10.sp,
+                        lineHeight =
+                            12.sp,
+                        fontFamily =
+                            InterfaceFont,
+                        fontWeight =
+                            FontWeight.Medium,
+                        maxLines =
+                            1,
+                        overflow =
+                            TextOverflow.Ellipsis,
                         modifier =
                             Modifier
-                                .align(
-                                    Alignment.CenterStart
+                                .padding(
+                                    start =
+                                        DaylightCameraLane
                                 )
-                                .offset(
-                                    y = 4.dp
+                                .weight(
+                                    1f
                                 )
-                    ) {
-                        Text(
-                            text =
-                                "$currentDay, $currentDate",
-                            color =
-                                SecondaryText,
-                            fontSize =
-                                11.sp,
-                            lineHeight =
-                                11.sp,
-                            fontFamily =
-                                InterfaceFont
-                        )
+                    )
 
-                        if (ShowHomeWeather) {
-                            Spacer(
-                                modifier =
-                                    Modifier.height(
-                                        1.dp
-                                    )
+                    Row(
+                        verticalAlignment =
+                            Alignment.CenterVertically,
+                        horizontalArrangement =
+                            Arrangement.spacedBy(
+                                7.dp
                             )
+                    ) {
 
-                            Row(
-                                verticalAlignment =
-                                    Alignment.CenterVertically
-                            ) {
-                                WeatherConditionIcon(
-                                    condition =
-                                        weatherSnapshot
-                                            ?.condition
-                                )
-
-                                Spacer(
-                                    modifier =
-                                        Modifier.width(
-                                            4.dp
-                                        )
-                                )
-
-                                Text(
-                                    text =
-                                        weatherSnapshot
-                                            ?.let { snapshot ->
-                                                "${snapshot.condition.lowercase()}, ${snapshot.temperatureText(WeatherInCelsius)}"
-                                            }
-                                            ?: "weather",
-                                    color =
-                                        SecondaryText,
-                                    fontSize =
-                                        9.sp,
-                                    lineHeight =
-                                        10.sp,
-                                    fontFamily =
-                                        InterfaceFont,
-                                    maxLines =
-                                        1
-                                )
+                        DaylightHeaderBattery(
+                            snapshot =
+                                batterySnapshot,
+                            onClick = {
+                                showBattery =
+                                    true
                             }
-                        }
-                    }
-
-                    /*
-                     * The camera sits top-left on the Titan, so the
-                     * time moved to the right where nothing overlaps
-                     * it, and the buttons dropped below it. That also
-                     * balances the header: two lines on each side.
-                     */
-                    Column(
-                        modifier =
-                            Modifier
-                                .align(
-                                    Alignment.CenterEnd
-                                )
-                                .offset(
-                                    y = 4.dp
-                                ),
-                        horizontalAlignment =
-                            Alignment.End
-                    ) {
-
-                        Text(
-                            text =
-                                currentTime,
-                            color =
-                                PrimaryText,
-                            fontSize =
-                                11.sp,
-                            lineHeight =
-                                11.sp,
-                            fontFamily =
-                                InterfaceFont,
-                            fontWeight =
-                                FontWeight.Medium
                         )
 
-                        Spacer(
-                            modifier =
-                                Modifier.height(
-                                    5.dp
-                                )
+                        DaylightHeaderIcon(
+                            icon =
+                                Icons.Outlined.Tune,
+                            contentDescription =
+                                "quick toggles",
+                            /*
+                             * Accent whenever the phone is not in its
+                             * plain audible state, so a silenced or
+                             * Do Not Disturbed phone is visible from
+                             * the home screen without opening the
+                             * card.
+                             */
+                            tint =
+                                if (
+                                    soundModeActive
+                                ) {
+                                    AccentOrange
+                                } else {
+                                    SecondaryText
+                                },
+                            onClick = {
+                                showQuickToggles =
+                                    true
+                            }
                         )
 
-                        Row(
-                            verticalAlignment =
-                                Alignment.CenterVertically,
-                            horizontalArrangement =
-                                Arrangement.spacedBy(
-                                    8.dp
-                                )
-                        ) {
+                        DaylightHeaderIcon(
+                            icon =
+                                Icons.Outlined.StarBorder,
+                            contentDescription =
+                                "favorites",
+                            onClick = {
+                                favoriteAssignSlot =
+                                    null
 
-                            HeaderBatteryButton(
-                                snapshot =
-                                    batterySnapshot,
-                                onClick = {
-                                    showBattery =
-                                        true
-                                }
-                            )
+                                showFavoriteApps =
+                                    true
+                            }
+                        )
 
-                            HeaderIconButton(
-                                icon =
-                                    Icons.Outlined.Tune,
-                                contentDescription =
-                                    "quick toggles",
+                        DaylightQuickReplyPill(
+                            waiting =
+                                quickReplyWaiting,
+                            onClick = {
                                 /*
-                                 * Accent whenever the phone is not in its
-                                 * plain audible state, so a silenced or
-                                 * Do Not Disturbed phone is visible from
-                                 * the home screen without opening the
-                                 * card.
+                                 * Nothing new: say so instead of
+                                 * opening an empty card.
                                  */
-                                tint =
-                                    if (
-                                        soundModeActive
-                                    ) {
-                                        AccentOrange
-                                    } else {
-                                        PrimaryText
-                                    },
-                                onClick = {
-                                    showQuickToggles =
-                                        true
-                                }
-                            )
-
-                            HeaderIconButton(
-                                icon =
-                                    Icons.Outlined.Bolt,
-                                contentDescription =
-                                    "quick reply",
-                                tint =
-                                    if (
-                                        quickReplyEntries.any {
-                                            it.unread
-                                        }
-                                    ) {
-                                        AccentOrange
-                                    } else {
-                                        PrimaryText
-                                    },
-                                onClick = {
+                                if (
+                                    quickReplyWaiting > 0
+                                ) {
                                     showQuickReply =
                                         true
-                                }
-                            )
-
-                            HeaderIconButton(
-                                icon =
-                                    Icons.Outlined.StarBorder,
-                                contentDescription =
-                                    "favorites",
-                                onClick = {
-                                    favoriteAssignSlot =
-                                        null
-
-                                    showFavoriteApps =
-                                        true
-                                }
-                            )
-                        }
-                    }
-                }
-
-                if (ShowHomeProductivityDots) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .blur(
-                                    commandFocusBlur
-                                )
-                    ) {
-                        /*
-                         * Without usage access every hour comes back
-                         * pending, which looks like a working row.
-                         * Tapping opens the grant screen.
-                         */
-                        val usageAccessGranted =
-                            remember(
-                                productivityHours
-                            ) {
-
-                                runCatching {
-                                    usageStatsRepository
-                                        .hasUsageAccess()
-                                }
-                                    .getOrDefault(
-                                        true
-                                    )
-                            }
-
-                        Box(
-                            modifier =
-                                Modifier
-                                    .then(
-                                        if (
-                                            usageAccessGranted
-                                        ) {
-                                            Modifier
-                                        } else {
-                                            Modifier.clickable {
-
-                                                setStatusText(
-                                                    "ALLOW USAGE ACCESS FOR PROMPT LAUNCHER"
-                                                )
-
-                                                runCatching {
-                                                    context.startActivity(
-                                                        Intent(
-                                                            Settings.ACTION_USAGE_ACCESS_SETTINGS
-                                                        )
-                                                    )
-                                                }
-                                                    .onFailure {
-                                                        setStatusText(
-                                                            "COULD NOT OPEN SETTINGS"
-                                                        )
-                                                    }
-                                            }
-                                        }
-                                    )
-                        ) {
-
-                            ProductivityDotsRow(
-                                statuses =
-                                    productivityHours
-                            )
-                        }
-                    }
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.dp
-                            )
-                    )
-                }
-
-                if (ShowHomeAttentionCard) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .blur(
-                                    commandFocusBlur
-                                )
-                    ) {
-                        InfoCard(
-                            icon =
-                                Icons.Outlined.Message,
-                            title =
-                                when {
-
-                                    unreadCount > 0 &&
-                                            homeMailCount > 0 ->
-                                        "$unreadCount texts · $homeMailCount $homeMailWord mail"
-
-                                    unreadCount == 1 ->
-                                        "1 unread message"
-
-                                    unreadCount > 1 ->
-                                        "$unreadCount unread messages"
-
-                                    homeMailCount == 1 ->
-                                        "1 $homeMailWord email"
-
-                                    homeMailCount > 1 ->
-                                        "$homeMailCount $homeMailWord emails"
-
-                                    else ->
-                                        "messages"
-                                },
-                            subtitle =
-                                when {
-
-                                    latestUnread != null ->
-                                        latestUnread.body.take(
-                                            44
-                                        )
-
-                                    importantUnreadMail != null ->
-                                        "${importantUnreadMail.sender}: ${importantUnreadMail.subject}"
-                                            .take(
-                                                44
-                                            )
-
-                                    newMailNotifications.isNotEmpty() ->
-                                        newMailNotifications
-                                            .first()
-                                            .let {
-                                                listOf(
-                                                    it.title,
-                                                    it.text
-                                                )
-                                                    .filter { part ->
-                                                        part.isNotBlank()
-                                                    }
-                                                    .joinToString(
-                                                        ": "
-                                                    )
-                                            }
-                                            .take(
-                                                44
-                                            )
-
-                                    /*
-                                     * A text that arrived as a
-                                     * notification has no stored row
-                                     * to preview, so the newest one
-                                     * is read from the notification
-                                     * itself. Without this the card
-                                     * counted the message and then
-                                     * claimed everything was clear.
-                                     */
-                                    liveConversationPreview != null ->
-                                        liveConversationPreview.take(
-                                            44
-                                        )
-
-                                    else ->
-                                        "all caught up"
-                                },
-                            badge =
-                                if (
-                                    unreadCount +
-                                    homeMailCount > 0
-                                ) {
-                                    (
-                                            unreadCount +
-                                                    homeMailCount
-                                            )
-                                        .toString()
                                 } else {
-                                    ""
-                                },
-                            onClick = {
-
-                                if (
-                                    unreadCount > 0
-                                ) {
-
-                                    openLatestUnreadMessage()
-
-                                } else if (
-                                    importantUnreadMail != null
-                                ) {
-
-                                    onOpenMail()
-
-                                } else if (
-                                    newMailNotifications.isNotEmpty()
-                                ) {
-
-                                    /*
-                                     * Opens that exact email in its
-                                     * app, like tapping it in the hub.
-                                     */
-                                    NotificationCenter
-                                        .openNotification(
-                                            key =
-                                                newMailNotifications
-                                                    .first()
-                                                    .key,
-                                            context =
-                                                context
-                                        )
-
-                                } else {
-
-                                    if (
-                                        !handOffMessagingIfNotDefault()
-                                    ) {
-                                        onOpenMessagesInbox()
-                                    }
+                                    setStatusText(
+                                        AllCaughtUpStatus
+                                    )
                                 }
                             }
                         )
                     }
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.dp
-                            )
-                    )
-
-                }
-
-                if (ShowHomeCalendarCard) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .blur(
-                                    commandFocusBlur
-                                )
-                    ) {
-                        InfoCard(
-                            icon =
-                                Icons.Outlined.Event,
-                            title =
-                                upcomingEvent
-                                    ?.title
-                                    ?: "calendar",
-                            subtitle =
-                                upcomingEvent
-                                    ?.let {
-
-                                        formatCalendarEventTime(
-                                            it
-                                        )
-                                    }
-                                    ?: "nothing upcoming",
-                            badge =
-                                "",
-                            onClick = {
-
-                                openCalendar()
-                            }
-                        )
-                    }
-
                 }
 
                 Spacer(
                     modifier =
                         Modifier.height(
-                            6.dp
+                            4.dp
                         )
                 )
 
+                /*
+                 * The ring takes whatever height is left over, so the
+                 * card and tiles always sit at the bottom (the
+                 * mockup's margin-top: auto) and nothing overflows on
+                 * a short screen.
+                 */
                 Box(
                     modifier =
                         Modifier
                             .fillMaxWidth()
+                            .weight(
+                                1f
+                            )
                             .blur(
                                 commandFocusBlur
-                            )
+                            ),
+                    contentAlignment =
+                        Alignment.TopCenter
                 ) {
-                    AppButtonRow(
-                        buttons =
+
+                    DaylightClockRing(
+                        time =
+                            currentTime,
+                        statuses =
+                            productivityHours,
+                        currentHour =
+                            currentHourOfDay,
+                        showDots =
+                            ShowHomeProductivityDots,
+                        subtitle =
+                            if (
+                                ShowHomeWeather
+                            ) {
+                                weatherSnapshot
+                                    ?.let { snapshot ->
+                                        "${snapshot.temperatureText(WeatherInCelsius)} · ${snapshot.condition.lowercase()}"
+                                    }
+                            } else {
+                                null
+                            },
+                        timeFontSize =
+                            35.sp,
+                        modifier =
+                            Modifier
+                                .size(
+                                    145.dp
+                                )
+                                .then(
+                                    if (
+                                        ShowHomeProductivityDots &&
+                                        !usageAccessGranted
+                                    ) {
+                                        Modifier.clickable {
+
+                                            setStatusText(
+                                                "ALLOW USAGE ACCESS FOR DAYLIGHT"
+                                            )
+
+                                            runCatching {
+                                                context.startActivity(
+                                                    Intent(
+                                                        Settings.ACTION_USAGE_ACCESS_SETTINGS
+                                                    )
+                                                )
+                                            }
+                                                .onFailure {
+                                                    setStatusText(
+                                                        "COULD NOT OPEN SETTINGS"
+                                                    )
+                                                }
+                                        }
+
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                    )
+                }
+
+                /*
+                 * ONE CARD OF INFO ROWS
+                 *
+                 * Texts, mail and the next event as rows of a single
+                 * card: a dot, a bold lead, a muted detail and a small
+                 * meta on the right. Each row keeps what tapping the
+                 * old attention / calendar card did for that item.
+                 */
+                val homeInfoRows =
+                    buildList<DaylightHomeInfoRow> {
+
+                        if (
+                            ShowHomeAttentionCard
+                        ) {
+
+                            if (
+                                unreadCount > 0
+                            ) {
+
+                                val newestUnreadEntry =
+                                    quickReplyEntries
+                                        .filter {
+                                            it.isMessage &&
+                                                    it.unread
+                                        }
+                                        .maxByOrNull {
+                                            it.timestamp
+                                        }
+
+                                add(
+                                    DaylightHomeInfoRow(
+                                        lead =
+                                            newestUnreadEntry
+                                                ?.title
+                                                ?.takeIf {
+                                                    it.isNotBlank()
+                                                }
+                                                ?: liveConversationPreview
+                                                    ?.substringBefore(
+                                                        ": "
+                                                    )
+                                                ?: "New messages",
+                                        detail =
+                                            (
+                                                    newestUnreadEntry
+                                                        ?.preview
+                                                        ?.takeIf {
+                                                            it.isNotBlank()
+                                                        }
+                                                        ?: latestUnread
+                                                            ?.body
+                                                        ?: liveConversationPreview
+                                                            ?.substringAfter(
+                                                                ": "
+                                                            )
+                                                        ?: ""
+                                                    )
+                                                .take(
+                                                    60
+                                                ),
+                                        meta =
+                                            if (
+                                                unreadCount == 1
+                                            ) {
+                                                "1 text"
+                                            } else {
+                                                "$unreadCount texts"
+                                            },
+                                        filledDot =
+                                            true,
+                                        onClick = {
+                                            openLatestUnreadMessage()
+                                        },
+                                        /*
+                                         * New texts stand out: the
+                                         * whole row in the accent.
+                                         */
+                                        highlighted =
+                                            true
+                                    )
+                                )
+                            }
+
+                            if (
+                                homeMailCount > 0
+                            ) {
+
+                                add(
+                                    DaylightHomeInfoRow(
+                                        lead =
+                                            if (
+                                                homeMailCount == 1
+                                            ) {
+                                                "1 $homeMailWord email"
+                                            } else {
+                                                "$homeMailCount $homeMailWord emails"
+                                            },
+                                        detail =
+                                            if (
+                                                importantUnreadMail != null
+                                            ) {
+                                                "${importantUnreadMail.sender}: ${importantUnreadMail.subject}"
+                                                    .take(
+                                                        60
+                                                    )
+                                            } else {
+                                                newMailNotifications
+                                                    .map {
+                                                        it.appName
+                                                    }
+                                                    .filter {
+                                                        it.isNotBlank()
+                                                    }
+                                                    .distinct()
+                                                    .joinToString(
+                                                        ", "
+                                                    )
+                                            },
+                                        meta =
+                                            daylightAgo(
+                                                importantUnreadMail
+                                                    ?.timestamp
+                                                    ?: newMailNotifications
+                                                        .firstOrNull()
+                                                        ?.timestamp
+                                                    ?: 0L,
+                                                currentDateTime.time
+                                            ),
+                                        filledDot =
+                                            true,
+                                        onClick = {
+
+                                            if (
+                                                importantUnreadMail != null
+                                            ) {
+
+                                                onOpenMail()
+
+                                            } else if (
+                                                newMailNotifications.isNotEmpty()
+                                            ) {
+
+                                                /*
+                                                 * Opens that exact email
+                                                 * in its app, like
+                                                 * tapping it in the hub.
+                                                 */
+                                                NotificationCenter
+                                                    .openNotification(
+                                                        key =
+                                                            newMailNotifications
+                                                                .first()
+                                                                .key,
+                                                        context =
+                                                            context
+                                                    )
+
+                                            } else {
+
+                                                onOpenMail()
+                                            }
+                                        }
+                                    )
+                                )
+                            }
+
+                            if (
+                                unreadCount == 0 &&
+                                homeMailCount == 0
+                            ) {
+
+                                add(
+                                    DaylightHomeInfoRow(
+                                        lead =
+                                            "Messages",
+                                        detail =
+                                            liveConversationPreview
+                                                ?.take(
+                                                    60
+                                                )
+                                                ?: "all caught up",
+                                        meta =
+                                            "",
+                                        filledDot =
+                                            false,
+                                        onClick = {
+
+                                            if (
+                                                !handOffMessagingIfNotDefault()
+                                            ) {
+                                                onOpenMessagesInbox()
+                                            }
+                                        }
+                                    )
+                                )
+                            }
+                        }
+
+                        if (
+                            ShowHomeCalendarCard
+                        ) {
+
+                            add(
+                                DaylightHomeInfoRow(
+                                    lead =
+                                        upcomingEvent
+                                            ?.title
+                                            ?.takeIf {
+                                                it.isNotBlank()
+                                            }
+                                            ?: "Calendar",
+                                    detail =
+                                        upcomingEvent
+                                            ?.let {
+
+                                                formatCalendarEventTime(
+                                                    it
+                                                )
+                                            }
+                                            ?: "nothing upcoming",
+                                    meta =
+                                        if (
+                                            upcomingEvent != null
+                                        ) {
+                                            "next"
+                                        } else {
+                                            ""
+                                        },
+                                    filledDot =
+                                        false,
+                                    onClick = {
+
+                                        openCalendar()
+                                    }
+                                )
+                            )
+                        }
+                    }
+
+                if (
+                    homeInfoRows.isNotEmpty()
+                ) {
+
+                    DaylightHomeInfoCard(
+                        rows =
+                            homeInfoRows,
+                        modifier =
+                            Modifier.blur(
+                                commandFocusBlur
+                            )
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(
+                                6.5.dp
+                            )
+                    )
+                }
+
+                /*
+                 * APP TILES: 2 rows x 4 equal-width tiles.
+                 */
+                DaylightHomeTileGrid(
+                    rows =
+                        listOf(
                             listOf(
                                 AppButtonData(
                                     Icons.Outlined.Description,
@@ -5979,27 +6222,7 @@ fun TitanHomeScreen(
                                     focusRequester
                                         .requestFocus()
                                 }
-                            )
-                    )
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(
-                            6.dp
-                        )
-                )
-
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .blur(
-                                commandFocusBlur
-                            )
-                ) {
-                    AppButtonRow(
-                        buttons =
+                            ),
                             listOf(
                                 AppButtonData(
                                     Icons.Outlined.Call,
@@ -6014,7 +6237,7 @@ fun TitanHomeScreen(
                                 },
                                 AppButtonData(
                                     Icons.Outlined.Message,
-                                    "Message"
+                                    "Text"
                                 ) {
 
                                     /*
@@ -6059,8 +6282,12 @@ fun TitanHomeScreen(
                                     onOpenMail()
                                 }
                             )
-                    )
-                }
+                        ),
+                    modifier =
+                        Modifier.blur(
+                            commandFocusBlur
+                        )
+                )
 
             }
         }
@@ -6076,9 +6303,14 @@ fun TitanHomeScreen(
                 Modifier
                     .fillMaxSize()
                     .background(
-                        Color.Black.copy(
+                        /*
+                         * Daylight frosts the home screen in its own
+                         * background colour rather than darkening it,
+                         * so light mode stays light while typing.
+                         */
+                        BackgroundBlack.copy(
                             alpha =
-                                commandFocusDim
+                                commandFocusDim * 0.8f
                         )
                     )
                     .then(
@@ -6125,9 +6357,9 @@ fun TitanHomeScreen(
                     )
                     .fillMaxWidth()
                     .padding(
-                        start = 10.dp,
-                        end = 10.dp,
-                        bottom = 8.dp
+                        start = DaylightPageHorizontal,
+                        end = DaylightPageHorizontal,
+                        bottom = 10.dp
                     )
         ) {
 
@@ -6147,50 +6379,19 @@ fun TitanHomeScreen(
                     fadeOut()
             ) {
 
-                Row(
+                /*
+                 * Daylight confirmation (mockup E-Sent): a centred
+                 * card with an accent check for "✓ ..." successes,
+                 * otherwise a simple pill.
+                 */
+                DaylightStatusConfirmation(
+                    statusText =
+                        statusText,
                     modifier =
-                        Modifier
-                            .padding(
-                                bottom = 5.dp
-                            )
-                            .background(
-                                SurfaceBlack,
-                                RoundedCornerShape(
-                                    12.dp
-                                )
-                            )
-                            .border(
-                                0.75.dp,
-                                AccentOrange,
-                                RoundedCornerShape(
-                                    12.dp
-                                )
-                            )
-                            .padding(
-                                horizontal = 10.dp,
-                                vertical = 5.dp
-                            )
-                ) {
-
-                    Text(
-                        text =
-                            statusText,
-                        color =
-                            AccentOrange,
-                        fontSize =
-                            9.5.sp,
-                        lineHeight =
-                            9.5.sp,
-                        fontFamily =
-                            InterfaceFont,
-                        fontWeight =
-                            FontWeight.Medium,
-                        maxLines =
-                            2,
-                        overflow =
-                            TextOverflow.Ellipsis
-                    )
-                }
+                        Modifier.padding(
+                            bottom = 8.dp
+                        )
+                )
             }
 
             if (
@@ -6204,6 +6405,7 @@ fun TitanHomeScreen(
                  */
                 if (
                     lockedTextContact == null &&
+                    commandText.isNotBlank() &&
                     recentWebSearches.isNotEmpty() &&
                     inlineContactQuery.isBlank() &&
                     groupComposeQuery.isBlank()
@@ -6257,30 +6459,45 @@ fun TitanHomeScreen(
                  * suggestion list below is what matters then, and the
                  * legend just pushes it off screen.
                  */
+                /*
+                 * Whether what's typed is (or is becoming) a command:
+                 * a symbol command ("@", "+", ...) or a word command
+                 * ("email", "settings", ...). Plain text is a search,
+                 * so the command legend and the "what this will do"
+                 * card are left out for it.
+                 */
+                val typedText =
+                    commandText
+                        .trim()
+                        .lowercase()
+
+                val promptLooksLikeCommand =
+                    typedText.isNotEmpty() &&
+                            typedText.first() in LauncherSymbolCommands ||
+                            LauncherLegacyCommands.any { word ->
+                                typedText == word ||
+                                        typedText.startsWith("$word ") ||
+                                        (typedText.length >= 2 && word.startsWith(typedText))
+                            }
+
                 if (
                     lockedTextContact == null &&
                     inlineContactQuery.isBlank() &&
-                    groupComposeQuery.isBlank()
+                    groupComposeQuery.isBlank() &&
+                    (
+                            appsModeActive ||
+                                    (promptLooksLikeCommand && ShowCommandHints)
+                            )
                 ) {
 
                     /*
-                     * With the apps target on, the app list takes the
-                     * legend's place. The legend stays in the layout
-                     * (invisible) so nothing above or below moves.
+                     * With the apps target on, the app list replaces
+                     * the legend, only as tall as the apps it lists.
                      */
                     Box {
 
-                        Box(
-                            modifier =
-                                Modifier.alpha(
-                                    if (
-                                        appsModeActive
-                                    ) {
-                                        0f
-                                    } else {
-                                        1f
-                                    }
-                                )
+                        if (
+                            !appsModeActive
                         ) {
 
                             CommandHintsCard(
@@ -6325,7 +6542,7 @@ fun TitanHomeScreen(
                                     )
                                 },
                                 modifier =
-                                    Modifier.matchParentSize()
+                                    Modifier.fillMaxWidth()
                             )
                         }
                     }
@@ -6338,10 +6555,168 @@ fun TitanHomeScreen(
                     )
                 }
 
+                /*
+                 * Plain text (a search) gets no "what this will do"
+                 * card unless there's something in it to pick.
+                 */
+                if (
+                    lockedTextContact != null ||
+                    promptLooksLikeCommand ||
+                    inlineContactMatches.isNotEmpty() ||
+                    inlineAppMatches.isNotEmpty() ||
+                    groupRecipients.isNotEmpty() ||
+                    groupContactMatches.isNotEmpty()
+                ) {
+
+                    /*
+                     * Daylight (mockup C-Typing): the card saying what the
+                     * prompt will do comes first, then the chips, then
+                     * the prompt itself.
+                     */
+                    CommandContextPanel(
+                        lockedContact =
+                            lockedTextContact,
+                        onUnlockContact = {
+                            lockedTextContact =
+                                null
+
+                            commandText =
+                                ""
+
+                            scope.launch {
+
+                                delay(
+                                    20
+                                )
+
+                                focusRequester
+                                    .requestFocus()
+                            }
+                        },
+                        taskTarget =
+                            if (
+                                commandText
+                                    .trimStart()
+                                    .startsWith(
+                                        "+"
+                                    )
+                            ) {
+                                when (
+                                    currentTaskProvider
+                                ) {
+                                    TaskProvider.TODOIST ->
+                                        "Todoist"
+
+                                    TaskProvider.GOOGLE_TASKS ->
+                                        "Google Tasks"
+
+                                    TaskProvider.NONE ->
+                                        null
+                                }
+                            } else {
+                                null
+                            },
+                        commandText =
+                            if (
+                                lockedTextContact != null
+                            ) {
+                                "@"
+                            } else {
+                                commandText
+                            },
+                        groupRecipients =
+                            groupRecipients.map {
+                                it.name
+                            },
+                        groupMatches =
+                            groupContactMatches,
+                        groupQuery =
+                            groupComposeQuery,
+                        selectedGroupIndex =
+                            groupSelectionIndex,
+                        onChooseGroupContact = {
+                                contact ->
+
+                            addGroupRecipient(
+                                contact
+                            )
+                        },
+                        contactQuery =
+                            lockedTextContact?.name
+                                ?: inlineContactQuery,
+                        contacts =
+                            inlineContactMatches,
+                        selectedContactIndex =
+                            inlineContactSelectionIndex,
+                        onChooseContact = {
+                                contact ->
+
+                            val typed =
+                                commandText.trimStart()
+
+                            if (
+                                typed.startsWith("@") &&
+                                !typed.startsWith("@@")
+                            ) {
+
+                                /*
+                                 * Tap locks the contact in; keep anything
+                                 * already typed as the start of the
+                                 * message.
+                                 */
+                                val typedMessage =
+                                    (inlineContactCommand as? Command.SendMessage)
+                                        ?.message
+                                        .orEmpty()
+
+                                lockedTextContact =
+                                    contact
+
+                                commandText =
+                                    typedMessage
+
+                                scope.launch {
+
+                                    delay(
+                                        20
+                                    )
+
+                                    focusRequester
+                                        .requestFocus()
+                                }
+
+                            } else {
+
+                                chooseInlineContact(
+                                    contact
+                                )
+                            }
+                        },
+                        apps =
+                            inlineAppMatches,
+                        selectedAppIndex =
+                            inlineAppSelectionIndex,
+                        onChooseApp = {
+                                app ->
+
+                            chooseInlineApp(
+                                app
+                            )
+                        }
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(
+                                7.dp
+                            )
+                    )
+                }
+
                 val looksLikeFreeText =
                     lockedTextContact == null &&
                             searchPickerActive &&
-                            commandText.isNotBlank() &&
+                            (commandText.isNotBlank() || promptAlwaysOpen) &&
                             commandText
                                 .trim()
                                 .firstOrNull() !in
@@ -6368,7 +6743,7 @@ fun TitanHomeScreen(
                         modifier =
                             Modifier
                                 .padding(
-                                    bottom = 5.dp
+                                    bottom = 7.dp
                                 ),
                         horizontalArrangement =
                             Arrangement.spacedBy(
@@ -6446,7 +6821,7 @@ fun TitanHomeScreen(
                         modifier =
                             Modifier
                                 .padding(
-                                    bottom = 5.dp
+                                    bottom = 7.dp
                                 ),
                         horizontalArrangement =
                             Arrangement.spacedBy(
@@ -6502,98 +6877,10 @@ fun TitanHomeScreen(
                     }
                 }
 
-                CommandContextPanel(
-                    commandText =
-                        if (
-                            lockedTextContact != null
-                        ) {
-                            "@"
-                        } else {
-                            commandText
-                        },
-                    groupRecipients =
-                        groupRecipients.map {
-                            it.name
-                        },
-                    groupMatches =
-                        groupContactMatches,
-                    selectedGroupIndex =
-                        groupSelectionIndex,
-                    onChooseGroupContact = {
-                            contact ->
-
-                        addGroupRecipient(
-                            contact
-                        )
-                    },
-                    contactQuery =
-                        lockedTextContact?.name
-                            ?: inlineContactQuery,
-                    contacts =
-                        inlineContactMatches,
-                    selectedContactIndex =
-                        inlineContactSelectionIndex,
-                    onChooseContact = {
-                            contact ->
-
-                        val typed =
-                            commandText.trimStart()
-
-                        if (
-                            typed.startsWith("@") &&
-                            !typed.startsWith("@@")
-                        ) {
-
-                            /*
-                             * Tap locks the contact in; keep anything
-                             * already typed as the start of the
-                             * message.
-                             */
-                            val typedMessage =
-                                (inlineContactCommand as? Command.SendMessage)
-                                    ?.message
-                                    .orEmpty()
-
-                            lockedTextContact =
-                                contact
-
-                            commandText =
-                                typedMessage
-
-                            scope.launch {
-
-                                delay(
-                                    20
-                                )
-
-                                focusRequester
-                                    .requestFocus()
-                            }
-
-                        } else {
-
-                            chooseInlineContact(
-                                contact
-                            )
-                        }
-                    },
-                    apps =
-                        inlineAppMatches,
-                    selectedAppIndex =
-                        inlineAppSelectionIndex,
-                    onChooseApp = {
-                            app ->
-
-                        chooseInlineApp(
-                            app
-                        )
-                    }
-                )
-
                 Spacer(
                     modifier =
                         Modifier.height(
-                            5.dp
+                            1.dp
                         )
                 )
             }
@@ -6734,6 +7021,8 @@ fun TitanHomeScreen(
                     promptOpen,
                 lockedToContact =
                     lockedTextContact != null,
+                lockedContactName =
+                    lockedTextContact?.name,
                 onBackspaceWhenEmpty = {
                     lockedTextContact =
                         null
@@ -6761,6 +7050,11 @@ fun TitanHomeScreen(
         ) {
 
             val closeAssistant = {
+
+                assistantJob?.cancel()
+
+                assistantJob =
+                    null
 
                 assistantQuestion =
                     null
@@ -7037,7 +7331,7 @@ fun TitanHomeScreen(
                                                 it.unread
                                     }
 
-                                val launcherContext =
+                                val buildLauncherContext: () -> String = {
                                     buildAssistantLauncherContext(
                                         sharing =
                                             assistantSharingStore.load(),
@@ -7078,8 +7372,21 @@ fun TitanHomeScreen(
                                                 }
                                         },
                                         mailMessages =
-                                            mailMessages
+                                            mailMessages,
+                                        recentTexts = {
+                                            buildRecentTextsContext(
+                                                context,
+                                                contactRepository,
+                                                hasContactsPermission
+                                            )
+                                        },
+                                        mailNotifications = {
+                                            buildMailNotificationsContext(
+                                                context
+                                            )
+                                        }
                                     )
+                                }
 
                                 assistantTurns =
                                     previousTurns +
@@ -7093,7 +7400,7 @@ fun TitanHomeScreen(
                                 assistantThinking =
                                     true
 
-                                scope.launch {
+                                assistantJob = scope.launch {
 
                                     val response =
                                         geminiRepository
@@ -7103,9 +7410,21 @@ fun TitanHomeScreen(
                                                 question =
                                                     followUp,
                                                 launcherContext =
-                                                    launcherContext,
+                                                    withContext(Dispatchers.IO) { buildLauncherContext() },
                                                 conversationHistory =
-                                                    history
+                                                    history,
+                                                onPartial = { partial ->
+                                                    withContext(Dispatchers.Main) {
+                                                        assistantTurns =
+                                                            previousTurns +
+                                                                    AssistantTurn(
+                                                                        question =
+                                                                            followUp,
+                                                                        answer =
+                                                                            partial
+                                                                    )
+                                                    }
+                                                }
                                             )
 
                                     assistantTurns =
@@ -7306,6 +7625,17 @@ fun TitanHomeScreen(
 
                     setStatusText(
                         message
+                    )
+                },
+                onAllCaughtUp = {
+                    showQuickReply =
+                        false
+
+                    /*
+                     * Same confirmation as adding a task.
+                     */
+                    setStatusText(
+                        AllCaughtUpStatus
                     )
                 },
                 onDismiss = {
@@ -8495,9 +8825,15 @@ fun EmailContactChooserScreen(
                 .background(
                     BackgroundBlack
                 )
+                /*
+                 * The top padding keeps a long list clear of the
+                 * camera in the top-left corner.
+                 */
                 .padding(
-                    horizontal = 10.dp,
-                    vertical = 7.dp
+                    start = DaylightPageHorizontal,
+                    end = DaylightPageHorizontal,
+                    top = 34.dp,
+                    bottom = 12.dp
                 )
                 .focusRequester(
                     focusRequester
@@ -8556,144 +8892,110 @@ fun EmailContactChooserScreen(
                                 true
                             }
 
+                            Key.DirectionLeft,
+                            Key.DirectionRight -> {
+
+                                toggleMailWriteTarget()
+                                true
+                            }
+
                             else -> false
                         }
                     }
-                }
+                },
+        verticalArrangement =
+            Arrangement.Bottom
     ) {
 
-        Text(
-            text = "CHOOSE EMAIL",
-            color = PrimaryText,
-            fontSize = 14.sp,
-            fontFamily = InterfaceFont,
-            fontWeight = FontWeight.Medium,
-            modifier =
-                Modifier.padding(
-                    start = CameraSafeStartPadding
-                )
-        )
-
-        Spacer(
-            modifier = Modifier.height(5.dp)
-        )
-
-        MinimalDivider()
-
-        Spacer(
-            modifier = Modifier.height(4.dp)
-        )
-
-        LazyColumn(
-            state = listState,
+        /*
+         * DAYLIGHT: NEW EMAIL TO (mockup F-Address)
+         *
+         * Every address that matches the name, on one white card
+         * sitting at the bottom of the screen, then where to write
+         * it: here in Daylight (sent through Gmail) or in your own
+         * mail app. Left and right switch, Enter picks the address.
+         */
+        Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
+                    .weight(
+                        1f,
+                        fill = false
+                    )
+                    .background(
+                        SurfaceBlack,
+                        RoundedCornerShape(13.dp)
+                    )
+                    .padding(5.dp)
         ) {
 
-            itemsIndexed(
-                items = contacts,
-                key = {
-                        _,
+            DaylightPromptLabel(
+                text = "New email to",
+                modifier =
+                    Modifier.padding(
+                        start = 8.dp,
+                        end = 8.dp,
+                        top = 6.dp,
+                        bottom = 3.dp
+                    )
+            )
+
+            LazyColumn(
+                state = listState,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(
+                            1f,
+                            fill = false
+                        )
+            ) {
+
+                itemsIndexed(
+                    items = contacts,
+                    key = {
+                            _,
+                            contact ->
+
+                        "${contact.name}|${contact.emailAddress}"
+                    }
+                ) {
+                        index,
                         contact ->
 
-                    "${contact.name}|${contact.emailAddress}"
-                }
-            ) {
-                    index,
-                    contact ->
-
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .background(
-                                if (
-                                    index == selectedIndex
-                                ) {
-                                    SurfaceBlack
-                                } else {
-                                    BackgroundBlack
-                                },
-                                RoundedCornerShape(8.dp)
-                            )
-                            .border(
-                                width =
-                                    if (
-                                        index == selectedIndex
-                                    ) {
-                                        0.75.dp
-                                    } else {
-                                        0.dp
-                                    },
-                                color =
-                                    if (
-                                        index == selectedIndex
-                                    ) {
-                                        BorderGray
-                                    } else {
-                                        Color.Transparent
-                                    },
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .clickable {
-
-                                selectedIndex = index
-                                onChoose(contact)
-                            }
-                            .padding(
-                                horizontal = 8.dp
+                    DaylightContactRow(
+                        contact =
+                            Contact(
+                                name = contact.name,
+                                phoneNumber = contact.emailAddress
                             ),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    Text(
-                        text =
-                            if (
-                                index == selectedIndex
-                            ) {
-                                ">"
-                            } else {
-                                " "
-                            },
-                        color = AccentOrange,
-                        fontSize = 11.sp,
-                        fontFamily = InterfaceFont
+                        selected =
+                            index == selectedIndex,
+                        query =
+                            "",
+                        onClick = {
+                            selectedIndex = index
+                            onChoose(contact)
+                        },
+                        trailing =
+                            if (index == selectedIndex) "Enter" else null,
+                        sameAsSelected =
+                            contacts
+                                .getOrNull(
+                                    selectedIndex
+                                )
+                                ?.name == contact.name
                     )
-
-                    Spacer(
-                        modifier = Modifier.width(6.dp)
-                    )
-
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-
-                        Text(
-                            text = contact.name.lowercase(),
-                            color = PrimaryText,
-                            fontSize = 10.sp,
-                            fontFamily = InterfaceFont,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Text(
-                            text = contact.emailAddress,
-                            color = TertiaryText,
-                            fontSize = 7.sp,
-                            fontFamily = InterfaceFont,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
             }
         }
 
+        Spacer(
+            modifier = Modifier.height(8.dp)
+        )
+
+        DaylightWriteInChips()
     }
 }
 
@@ -8753,16 +9055,6 @@ fun MinimalAppButton(
                     RoundedCornerShape(
                         HomeButtonCornerRadiusDp.dp
                     )
-                )
-                .border(
-                    width =
-                        0.75.dp,
-                    color =
-                        BorderGray,
-                    shape =
-                        RoundedCornerShape(
-                            HomeButtonCornerRadiusDp.dp
-                        )
                 )
                 .clickable {
 
@@ -8831,23 +9123,13 @@ fun InfoCard(
             Modifier
                 .fillMaxWidth()
                 .height(
-                    52.dp
+                    50.dp
                 )
                 .background(
                     HomeInfoCardSurface,
                     RoundedCornerShape(
-                        9.dp
+                        16.dp
                     )
-                )
-                .border(
-                    width =
-                        0.75.dp,
-                    color =
-                        BorderGray,
-                    shape =
-                        RoundedCornerShape(
-                            9.dp
-                        )
                 )
                 .clickable {
 
@@ -8855,7 +9137,7 @@ fun InfoCard(
                 }
                 .padding(
                     horizontal =
-                        8.dp
+                        12.dp
                 ),
         verticalAlignment =
             Alignment.CenterVertically
@@ -8865,7 +9147,7 @@ fun InfoCard(
             modifier =
                 Modifier
                     .size(
-                        25.dp
+                        28.dp
                     )
                     .background(
                         AccentOrange.copy(
@@ -8873,7 +9155,7 @@ fun InfoCard(
                                 0.12f
                         ),
                         RoundedCornerShape(
-                            6.dp
+                            10.dp
                         )
                     ),
             contentAlignment =
@@ -8914,11 +9196,13 @@ fun InfoCard(
                 color =
                     PrimaryText,
                 fontSize =
-                    10.sp,
-                lineHeight =
                     12.sp,
+                lineHeight =
+                    14.sp,
                 fontFamily =
                     InterfaceFont,
+                fontWeight =
+                    FontWeight.SemiBold,
                 maxLines =
                     1
             )
@@ -8934,11 +9218,11 @@ fun InfoCard(
                 text =
                     subtitle,
                 color =
-                    TertiaryText,
+                    SecondaryText,
                 fontSize =
-                    8.sp,
-                lineHeight =
                     10.sp,
+                lineHeight =
+                    12.sp,
                 fontFamily =
                     InterfaceFont,
                 maxLines =
@@ -8956,13 +9240,20 @@ fun InfoCard(
                 color =
                     AccentOrange,
                 fontSize =
-                    8.sp,
+                    10.sp,
                 fontFamily =
                     InterfaceFont
             )
         }
     }
 }
+
+/*
+ * Shown like a task confirmation after the last quick reply, or when
+ * the bolt is tapped with nothing waiting.
+ */
+internal const val AllCaughtUpStatus =
+    "✓ All caught up · Go enjoy life."
 
 internal val LauncherSymbolCommands =
     setOf('@', '/', ':', '+', '?', '"', '!', '.')
@@ -9887,6 +10178,34 @@ internal data class WordCommandHintItem(
 )
 
 
+/*
+ * Whether the command legend above the prompt is collapsed to just its
+ * header. Remembered on the phone; toggled by tapping the header.
+ */
+internal object CommandHintsPrefs {
+
+    private const val PrefsName = "daylight_command_hints"
+    private const val KeyCollapsed = "collapsed"
+
+    fun isCollapsed(
+        context: android.content.Context
+    ): Boolean =
+        context
+            .getSharedPreferences(PrefsName, android.content.Context.MODE_PRIVATE)
+            .getBoolean(KeyCollapsed, false)
+
+    fun setCollapsed(
+        context: android.content.Context,
+        collapsed: Boolean
+    ) {
+        context
+            .getSharedPreferences(PrefsName, android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KeyCollapsed, collapsed)
+            .apply()
+    }
+}
+
 @Composable
 internal fun CommandHintsCard(
     commandText: String,
@@ -9902,6 +10221,29 @@ internal fun CommandHintsCard(
     var dragOffsetPx by remember {
         mutableFloatStateOf(
             0f
+        )
+    }
+
+    /*
+     * Collapsed shows only the "commands" header; remembered across
+     * launches (CommandHintsPrefs).
+     */
+    val hintsContext =
+        LocalContext.current
+
+    var collapsed by remember {
+        mutableStateOf(
+            CommandHintsPrefs.isCollapsed(
+                hintsContext
+            )
+        )
+    }
+
+    fun toggleCollapsed() {
+        collapsed = !collapsed
+        CommandHintsPrefs.setCollapsed(
+            hintsContext,
+            collapsed
         )
     }
 
@@ -10160,287 +10502,320 @@ internal fun CommandHintsCard(
                 Alignment.CenterVertically
         ) {
 
-            Text(
-                text =
-                    if (
-                        page ==
-                        0
-                    ) {
-                        "commands"
-                    } else {
-                        "word commands"
-                    },
-                color =
-                    TertiaryText,
-                fontSize =
-                    7.5.sp,
-                lineHeight =
-                    8.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Medium,
-                modifier =
-                    Modifier.weight(
-                        1f
-                    )
-            )
-
-            Text(
-                text =
-                    if (
-                        page ==
-                        0
-                    ) {
-                        ">"
-                    } else {
-                        "<"
-                    },
-                color =
-                    SecondaryText,
-                fontSize =
-                    11.sp,
-                lineHeight =
-                    11.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Bold,
+            Row(
                 modifier =
                     Modifier
-                        .width(
-                            22.dp
-                        )
+                        .weight(1f)
                         .clickable {
-
-                            page =
-                                if (
-                                    page ==
-                                    0
-                                ) {
-                                    1
-                                } else {
-                                    0
-                                }
-
-                            dragOffsetPx =
-                                0f
+                            toggleCollapsed()
                         }
-                        .padding(
-                            vertical =
-                                1.dp
-                        ),
-                textAlign =
-                    TextAlign.Center
-            )
-        }
+                        .padding(vertical = 1.dp),
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    5.dp
+                Icon(
+                    imageVector =
+                        if (collapsed) Icons.Outlined.ExpandMore
+                        else Icons.Outlined.ExpandLess,
+                    contentDescription =
+                        if (collapsed) "show commands" else "hide commands",
+                    tint = SecondaryText,
+                    modifier = Modifier.size(12.dp)
                 )
-        )
 
-        BoxWithConstraints(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(
-                        92.dp
-                    )
-        ) {
+                Spacer(
+                    modifier = Modifier.width(3.dp)
+                )
 
-            val pageWidthPx =
-                constraints
-                    .maxWidth
-                    .toFloat()
-                    .coerceAtLeast(
-                        1f
-                    )
-
-            val dragState =
-                rememberDraggableState {
-                        delta ->
-
-                    val proposed =
-                        dragOffsetPx +
-                                delta
-
-                    dragOffsetPx =
-                        when (
-                            page
+                Text(
+                    text =
+                        if (
+                            collapsed
                         ) {
+                            "commands"
+                        } else if (
+                            page ==
+                            0
+                        ) {
+                            "commands"
+                        } else {
+                            "word commands"
+                        },
+                    color =
+                        TertiaryText,
+                    fontSize =
+                        7.5.sp,
+                    lineHeight =
+                        8.sp,
+                    fontFamily =
+                        InterfaceFont,
+                    fontWeight =
+                        FontWeight.Medium
+                )
+            }
 
-                            0 ->
-                                proposed.coerceIn(
-                                    -pageWidthPx,
-                                    0f
-                                )
+            if (!collapsed)
+                Text(
+                    text =
+                        if (
+                            page ==
+                            0
+                        ) {
+                            ">"
+                        } else {
+                            "<"
+                        },
+                    color =
+                        SecondaryText,
+                    fontSize =
+                        11.sp,
+                    lineHeight =
+                        11.sp,
+                    fontFamily =
+                        InterfaceFont,
+                    fontWeight =
+                        FontWeight.Bold,
+                    modifier =
+                        Modifier
+                            .width(
+                                22.dp
+                            )
+                            .clickable {
 
-                            else ->
-                                proposed.coerceIn(
-                                    0f,
-                                    pageWidthPx
-                                )
-                        }
-                }
-
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        /*
-                         * Both pages are always composed and simply
-                         * translated, so the one off screen has to be
-                         * clipped or it spills past the card edge.
-                         */
-                        .clipToBounds()
-                        .draggable(
-                            state =
-                                dragState,
-                            orientation =
-                                Orientation.Horizontal,
-                            onDragStarted = {
+                                page =
+                                    if (
+                                        page ==
+                                        0
+                                    ) {
+                                        1
+                                    } else {
+                                        0
+                                    }
 
                                 dragOffsetPx =
                                     0f
-                            },
-                            onDragStopped = {
-                                    velocity ->
-
-                                val threshold =
-                                    pageWidthPx *
-                                            0.22f
-
-                                val moveToNext =
-                                    page ==
-                                            0 &&
-                                            (
-                                                    dragOffsetPx <=
-                                                            -threshold ||
-                                                            velocity <
-                                                            -900f
-                                                    )
-
-                                val moveToPrevious =
-                                    page ==
-                                            1 &&
-                                            (
-                                                    dragOffsetPx >=
-                                                            threshold ||
-                                                            velocity >
-                                                            900f
-                                                    )
-
-                                val targetOffset =
-                                    when {
-
-                                        moveToNext ->
-                                            -pageWidthPx
-
-                                        moveToPrevious ->
-                                            pageWidthPx
-
-                                        else ->
-                                            0f
-                                    }
-
-                                scope.launch {
-
-                                    animate(
-                                        initialValue =
-                                            dragOffsetPx,
-                                        targetValue =
-                                            targetOffset,
-                                        animationSpec =
-                                            tween(
-                                                durationMillis =
-                                                    if (
-                                                        ReduceLauncherMotion
-                                                    ) {
-                                                        0
-                                                    } else {
-                                                        170
-                                                    }
-                                            )
-                                    ) {
-                                            value,
-                                            _ ->
-
-                                        dragOffsetPx =
-                                            value
-                                    }
-
-                                    when {
-
-                                        moveToNext ->
-                                            page =
-                                                1
-
-                                        moveToPrevious ->
-                                            page =
-                                                0
-                                    }
-
-                                    dragOffsetPx =
-                                        0f
-                                }
                             }
+                            .padding(
+                                vertical =
+                                    1.dp
+                            ),
+                    textAlign =
+                        TextAlign.Center
+                )
+        }
+
+        if (
+            !collapsed
+        ) {
+
+            Spacer(
+                modifier =
+                    Modifier.height(
+                        5.dp
+                    )
+            )
+
+            BoxWithConstraints(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(
+                            92.dp
                         )
             ) {
 
+                val pageWidthPx =
+                    constraints
+                        .maxWidth
+                        .toFloat()
+                        .coerceAtLeast(
+                            1f
+                        )
+
+                val dragState =
+                    rememberDraggableState {
+                            delta ->
+
+                        val proposed =
+                            dragOffsetPx +
+                                    delta
+
+                        dragOffsetPx =
+                            when (
+                                page
+                            ) {
+
+                                0 ->
+                                    proposed.coerceIn(
+                                        -pageWidthPx,
+                                        0f
+                                    )
+
+                                else ->
+                                    proposed.coerceIn(
+                                        0f,
+                                        pageWidthPx
+                                    )
+                            }
+                    }
+
                 Box(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .graphicsLayer {
+                            /*
+                             * Both pages are always composed and simply
+                             * translated, so the one off screen has to be
+                             * clipped or it spills past the card edge.
+                             */
+                            .clipToBounds()
+                            .draggable(
+                                state =
+                                    dragState,
+                                orientation =
+                                    Orientation.Horizontal,
+                                onDragStarted = {
 
-                                translationX =
-                                    (
-                                            -page *
-                                                    pageWidthPx
-                                            ) +
-                                            dragOffsetPx
-                            }
+                                    dragOffsetPx =
+                                        0f
+                                },
+                                onDragStopped = {
+                                        velocity ->
+
+                                    val threshold =
+                                        pageWidthPx *
+                                                0.22f
+
+                                    val moveToNext =
+                                        page ==
+                                                0 &&
+                                                (
+                                                        dragOffsetPx <=
+                                                                -threshold ||
+                                                                velocity <
+                                                                -900f
+                                                        )
+
+                                    val moveToPrevious =
+                                        page ==
+                                                1 &&
+                                                (
+                                                        dragOffsetPx >=
+                                                                threshold ||
+                                                                velocity >
+                                                                900f
+                                                        )
+
+                                    val targetOffset =
+                                        when {
+
+                                            moveToNext ->
+                                                -pageWidthPx
+
+                                            moveToPrevious ->
+                                                pageWidthPx
+
+                                            else ->
+                                                0f
+                                        }
+
+                                    scope.launch {
+
+                                        animate(
+                                            initialValue =
+                                                dragOffsetPx,
+                                            targetValue =
+                                                targetOffset,
+                                            animationSpec =
+                                                tween(
+                                                    durationMillis =
+                                                        if (
+                                                            ReduceLauncherMotion
+                                                        ) {
+                                                            0
+                                                        } else {
+                                                            170
+                                                        }
+                                                )
+                                        ) {
+                                                value,
+                                                _ ->
+
+                                            dragOffsetPx =
+                                                value
+                                        }
+
+                                        when {
+
+                                            moveToNext ->
+                                                page =
+                                                    1
+
+                                            moveToPrevious ->
+                                                page =
+                                                    0
+                                        }
+
+                                        dragOffsetPx =
+                                            0f
+                                    }
+                                }
+                            )
                 ) {
 
-                    SymbolCommandHintsPage(
-                        rows =
-                            symbolRows,
-                        activeCommand =
-                            activeCommand,
-                        onCommandSelected =
-                            onCommandSelected
-                    )
-                }
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
 
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
+                                    translationX =
+                                        (
+                                                -page *
+                                                        pageWidthPx
+                                                ) +
+                                                dragOffsetPx
+                                }
+                    ) {
 
-                                translationX =
-                                    (
-                                            (
-                                                    1 -
-                                                            page
-                                                    ) *
-                                                    pageWidthPx
-                                            ) +
-                                            dragOffsetPx
-                            }
-                ) {
+                        SymbolCommandHintsPage(
+                            rows =
+                                symbolRows,
+                            activeCommand =
+                                activeCommand,
+                            onCommandSelected =
+                                onCommandSelected
+                        )
+                    }
 
-                    WordCommandHintsPage(
-                        rows =
-                            wordRows,
-                        activeWordCommand =
-                            activeWordCommand,
-                        onCommandSelected =
-                            onCommandSelected
-                    )
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+
+                                    translationX =
+                                        (
+                                                (
+                                                        1 -
+                                                                page
+                                                        ) *
+                                                        pageWidthPx
+                                                ) +
+                                                dragOffsetPx
+                                }
+                    ) {
+
+                        WordCommandHintsPage(
+                            rows =
+                                wordRows,
+                            activeWordCommand =
+                                activeWordCommand,
+                            onCommandSelected =
+                                onCommandSelected
+                        )
+                    }
                 }
             }
         }
@@ -10795,7 +11170,26 @@ internal fun CommandContextPanel(
     onChooseContact: (Contact) -> Unit,
     apps: List<LauncherAppEntry> = emptyList(),
     selectedAppIndex: Int = 0,
-    onChooseApp: (LauncherAppEntry) -> Unit = {}
+    onChooseApp: (LauncherAppEntry) -> Unit = {},
+    /*
+     * The contact locked in with a tap, if any. Daylight shows a
+     * "message to" card for it.
+     */
+    lockedContact: Contact? = null,
+    /*
+     * The unlock button on the "message to" card. Null hides it.
+     */
+    onUnlockContact: (() -> Unit)? = null,
+    /*
+     * Where a "+" task goes ("Todoist", "Google Tasks"), shown as
+     * "NEW TO-DO → TODOIST".
+     */
+    taskTarget: String? = null,
+    /*
+     * The name being typed after "@@", highlighted in the group
+     * suggestions.
+     */
+    groupQuery: String = ""
 ) {
     val context =
         launcherCommandContext(
@@ -10803,469 +11197,590 @@ internal fun CommandContextPanel(
             contactQuery = contactQuery
         )
 
-    val lightModeContext =
-        BackgroundBlack ==
-                Color(
-                    0xFFFAF9F6
+    val raw =
+        commandText.trim()
+
+    val showsList =
+        contacts.isNotEmpty() ||
+                groupRecipients.isNotEmpty() ||
+                groupMatches.isNotEmpty() ||
+                apps.isNotEmpty()
+
+    /*
+     * The muted line under the card.
+     */
+    val hint =
+        when {
+            lockedContact != null ->
+                "Enter sends and opens the chat in Messages · Backspace on empty unlocks"
+
+            groupRecipients.isNotEmpty() ||
+                    groupMatches.isNotEmpty() ->
+                daylightGroupHint(
+                    groupRecipients.size
                 )
 
-    val contextPrimaryColor =
-        if (
-            lightModeContext
-        ) {
-            Color(
-                0xFFD4D4D4
-            )
-        } else {
-            PrimaryText
-        }
+            contacts.isNotEmpty() &&
+                    raw.startsWith("@") ->
+                "Tap a name to lock it in, or keep typing"
 
-    val contextSecondaryColor =
-        if (
-            lightModeContext
-        ) {
-            Color(
-                0xFFBBBBBB
-            )
-        } else {
-            SecondaryText
-        }
+            contacts.isNotEmpty() ->
+                "Enter picks the highlighted name"
 
-    val contextTertiaryColor =
-        if (
-            lightModeContext
-        ) {
-            Color(
-                0xFFA6A6A6
-            )
-        } else {
-            TertiaryText
+            else ->
+                null
         }
 
     Column(
         modifier =
             Modifier.fillMaxWidth()
     ) {
-        Row(
+
+        /*
+         * Daylight: everything the prompt is about to do sits on one
+         * white card (mockups C-Typing, E-Pick, E-Locked, E-Group).
+         */
+        Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .background(
+                        SurfaceBlack,
+                        RoundedCornerShape(
+                            13.dp
+                        )
+                    )
                     .padding(
-                        horizontal = 5.dp
-                    ),
-            verticalAlignment =
-                Alignment.CenterVertically
+                        if (
+                            lockedContact == null &&
+                            showsList
+                        ) {
+                            5.dp
+                        } else {
+                            0.dp
+                        }
+                    )
         ) {
-            Text(
-                text =
-                    context.action,
-                color =
-                    contextPrimaryColor,
-                fontSize =
-                    9.5.sp,
-                lineHeight =
-                    11.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Medium,
-                maxLines =
-                    1
-            )
 
-            context.detail
-                ?.takeIf {
-                    it.isNotBlank()
-                }
-                ?.let {
-                        detail ->
+            if (
+                lockedContact != null
+            ) {
 
-                    Spacer(
-                        modifier =
-                            Modifier.width(
-                                6.dp
-                            )
-                    )
-
-                    Text(
-                        text =
-                            "→",
-                        color =
-                            contextTertiaryColor,
-                        fontSize =
-                            9.sp,
-                        fontFamily =
-                            InterfaceFont
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.width(
-                                6.dp
-                            )
-                    )
-
-                    Text(
-                        text =
-                            detail.lowercase(),
-                        color =
-                            contextSecondaryColor,
-                        fontSize =
-                            9.5.sp,
-                        lineHeight =
-                            11.sp,
-                        fontFamily =
-                            InterfaceFont,
-                        maxLines =
-                            1,
-                        overflow =
-                            TextOverflow.Ellipsis
-                    )
-                }
-        }
-
-        if (
-            contacts.isNotEmpty()
-        ) {
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        4.dp
-                    )
-            )
-
-            contacts.forEachIndexed {
-                    index,
-                    contact ->
-
-                val selected =
-                    index ==
-                            selectedContactIndex
-
-                Row(
+                Box(
                     modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            /*
-                             * A minimum rather than a fixed height:
-                             * the name and number together exceed
-                             * 27.dp in Poppins, which clipped the
-                             * number off the bottom.
-                             */
-                            .heightIn(
-                                min = 27.dp
-                            )
-                            .background(
-                                if (
-                                    selected
-                                ) {
-                                    HomeCommandSurface.copy(
-                                        alpha = 0.78f
-                                    )
-                                } else {
-                                    Color.Transparent
-                                },
-                                RoundedCornerShape(
-                                    7.dp
-                                )
-                            )
-                            .clickable {
-                                onChooseContact(
-                                    contact
-                                )
-                            }
-                            .padding(
-                                horizontal = 6.dp,
-                                vertical = 3.dp
-                            ),
-                    verticalAlignment =
-                        Alignment.CenterVertically
+                        Modifier.padding(
+                            horizontal = 13.dp,
+                            vertical = 11.dp
+                        )
                 ) {
-                    Text(
-                        text =
-                            if (
-                                selected
-                            ) {
-                                ">"
-                            } else {
-                                " "
-                            },
-                        color =
-                            AccentOrange,
-                        fontSize =
-                            9.sp,
-                        fontFamily =
-                            InterfaceFont,
-                        fontWeight =
-                            FontWeight.Bold,
-                        modifier =
-                            Modifier.width(
-                                14.dp
-                            )
+                    DaylightLockedContactCard(
+                        contact =
+                            lockedContact,
+                        onUnlock =
+                            onUnlockContact
                     )
+                }
 
-                    Column(
+            } else if (
+                !showsList
+            ) {
+
+                DaylightPromptContextContent(
+                    action =
+                        context.action,
+                    detail =
+                        context.detail,
+                    raw =
+                        raw,
+                    taskTarget =
+                        taskTarget
+                )
+
+            } else if (
+                apps.isNotEmpty() &&
+                contacts.isEmpty() &&
+                groupRecipients.isEmpty() &&
+                groupMatches.isEmpty()
+            ) {
+
+                DaylightPromptLabel(
+                    text =
+                        context.action,
+                    modifier =
+                        Modifier.padding(
+                            start = 8.dp,
+                            end = 8.dp,
+                            top = 5.dp,
+                            bottom = 3.dp
+                        )
+                )
+            }
+
+            if (
+                lockedContact == null
+            ) {
+
+                contacts.forEachIndexed {
+                        index,
+                        contact ->
+
+                    DaylightContactRow(
+                        contact =
+                            contact,
+                        selected =
+                            index ==
+                                    selectedContactIndex,
+                        query =
+                            contactQuery,
+                        onClick = {
+                            onChooseContact(
+                                contact
+                            )
+                        },
+                        sameAsSelected =
+                            contacts
+                                .getOrNull(
+                                    selectedContactIndex
+                                )
+                                ?.name == contact.name
+                    )
+                }
+
+                /*
+                 * Group compose: who is already on the list, then who
+                 * else can be added.
+                 */
+                if (
+                    groupRecipients.isNotEmpty()
+                ) {
+                    Box(
                         modifier =
-                            Modifier.weight(
-                                1f
+                            Modifier.padding(
+                                horizontal = 4.dp,
+                                vertical = 4.dp
                             )
                     ) {
+                        DaylightGroupChips(
+                            names =
+                                groupRecipients
+                        )
+                    }
+                }
+
+                if (
+                    groupRecipients.isNotEmpty() &&
+                    groupMatches.isNotEmpty()
+                ) {
+                    Box(
+                        modifier =
+                            Modifier.padding(
+                                horizontal = 4.dp,
+                                vertical = 3.dp
+                            )
+                    ) {
+                        DaylightRowDivider()
+                    }
+                }
+
+                groupMatches.forEachIndexed {
+                        index,
+                        contact ->
+
+                    InlineContactRow(
+                        contact =
+                            contact,
+                        selected =
+                            index ==
+                                    selectedGroupIndex,
+                        query =
+                            groupQuery,
+                        onClick = {
+                            onChooseGroupContact(
+                                contact
+                            )
+                        }
+                    )
+                }
+
+                /*
+                 * App matches for a "." query. Same row treatment as
+                 * the contact suggestions so both feel like one
+                 * mechanism.
+                 */
+                apps.forEachIndexed {
+                        index,
+                        app ->
+
+                    val selected =
+                        index ==
+                                selectedAppIndex
+
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(
+                                    min = 32.dp
+                                )
+                                .background(
+                                    if (
+                                        selected
+                                    ) {
+                                        AccentOrange.copy(
+                                            alpha = 0.08f
+                                        )
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                    RoundedCornerShape(
+                                        10.dp
+                                    )
+                                )
+                                .clickable {
+                                    onChooseApp(
+                                        app
+                                    )
+                                }
+                                .padding(
+                                    horizontal = 8.dp,
+                                    vertical = 5.dp
+                                ),
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+
+                        val appIcon =
+                            rememberAppIconBitmap(
+                                app.packageName
+                            )
+
+                        if (
+                            appIcon != null
+                        ) {
+
+                            Image(
+                                bitmap =
+                                    appIcon,
+                                contentDescription =
+                                    app.label,
+                                modifier =
+                                    Modifier.size(
+                                        20.dp
+                                    )
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(
+                                        10.dp
+                                    )
+                            )
+                        }
+
                         Text(
                             text =
-                                contact.name.lowercase(),
+                                app.label,
                             color =
                                 PrimaryText,
                             fontSize =
-                                9.5.sp,
+                                10.5.sp,
                             lineHeight =
-                                10.sp,
+                                13.sp,
                             fontFamily =
                                 InterfaceFont,
+                            fontWeight =
+                                FontWeight.SemiBold,
                             maxLines =
                                 1,
                             overflow =
-                                TextOverflow.Ellipsis
+                                TextOverflow.Ellipsis,
+                            modifier =
+                                Modifier.weight(
+                                    1f
+                                )
                         )
 
-                        Text(
-                            text =
-                                contact.phoneNumber,
-                            color =
-                                TertiaryText,
-                            fontSize =
-                                6.8.sp,
-                            lineHeight =
-                                7.5.sp,
-                            fontFamily =
-                                InterfaceFont,
-                            maxLines =
-                                1
-                        )
+                        if (
+                            selected
+                        ) {
+                            Text(
+                                text =
+                                    "Enter",
+                                color =
+                                    AccentOrange,
+                                fontSize =
+                                    8.5.sp,
+                                fontFamily =
+                                    InterfaceFont,
+                                fontWeight =
+                                    FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
         }
 
-        /*
-         * Group compose: who is already on the list, then who else
-         * can be added.
-         */
         if (
-            groupRecipients.isNotEmpty()
+            hint != null
         ) {
+            Spacer(
+                modifier =
+                    Modifier.height(
+                        7.dp
+                    )
+            )
 
+            DaylightPromptHint(
+                text =
+                    hint
+            )
+        }
+    }
+}
+
+/*
+ * The text side of the prompt card (mockup C-Typing): an accent label
+ * ("NEW TO-DO → TODOIST"), the thing being made in large type ("Buy
+ * milk") and a muted line saying what Enter does.
+ */
+@Composable
+private fun DaylightPromptContextContent(
+    action: String,
+    detail: String?,
+    raw: String,
+    taskTarget: String?
+) {
+
+    val cleanDetail =
+        detail
+            ?.trim()
+            ?.takeIf {
+                it.isNotBlank()
+            }
+
+    /*
+     * What was typed, without the command symbol in front.
+     */
+    val body =
+        if (
+            raw.firstOrNull() in LauncherSymbolCommands
+        ) {
+            raw
+                .trimStart {
+                    it in LauncherSymbolCommands
+                }
+                .trim()
+        } else {
+            raw
+        }
+
+    val title =
+        when (
+            action
+        ) {
+            /*
+             * A category letter ("w buy paper") is part of the
+             * command, not the note.
+             */
+            "add note" ->
+                if (
+                    body.length >= 2 &&
+                    body[1] == ' ' &&
+                    body[0].lowercaseChar() in setOf('p', 'w', 'i', 'j')
+                ) {
+                    body
+                        .drop(2)
+                        .trim()
+                } else {
+                    body
+                }
+
+            "message",
+            "call",
+            "press enter for all apps",
+            "command" ->
+                if (
+                    raw.firstOrNull() in LauncherSymbolCommands
+                ) {
+                    body
+                } else {
+                    raw
+                }
+
+            else ->
+                body
+        }
+
+    val label =
+        when (
+            action
+        ) {
+            "add task" ->
+                "New to-do" +
+                        (
+                                taskTarget
+                                    ?.let {
+                                        " → $it"
+                                    }
+                                    .orEmpty()
+                                )
+
+            "add event" ->
+                "New event"
+
+            "add note" ->
+                "New note" +
+                        (
+                                cleanDetail
+                                    ?.let {
+                                        " → $it"
+                                    }
+                                    .orEmpty()
+                                )
+
+            "set timer" ->
+                "Timer"
+
+            "set alarm" ->
+                "Alarm"
+
+            "ask assistant" ->
+                "Ask"
+
+            "command" ->
+                if (
+                    raw.isBlank()
+                ) {
+                    "Command"
+                } else {
+                    "Prompt"
+                }
+
+            else ->
+                action +
+                        (
+                                cleanDetail
+                                    ?.takeIf {
+                                        action !in
+                                                setOf(
+                                                    "message",
+                                                    "call"
+                                                )
+                                    }
+                                    ?.let {
+                                        " → $it"
+                                    }
+                                    .orEmpty()
+                                )
+        }
+
+    val enterLine =
+        when (
+            action
+        ) {
+            "add task" ->
+                "Enter to add"
+
+            "add event" ->
+                "Enter to add to your calendar"
+
+            "add note" ->
+                "Enter to save"
+
+            "set timer" ->
+                "Enter to start"
+
+            "set alarm" ->
+                "Enter to set"
+
+            "ask assistant" ->
+                "Enter to ask"
+
+            else ->
+                null
+        }
+
+    /*
+     * "today 5pm · Enter to add": a time read from a task or event
+     * leads the hint.
+     */
+    val hintLine =
+        listOfNotNull(
+            cleanDetail
+                ?.takeIf {
+                    action == "add task" ||
+                            action == "add event"
+                },
+            enterLine
+        )
+            .joinToString(
+                " · "
+            )
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = 13.dp,
+                    vertical = 11.dp
+                ),
+        verticalArrangement =
+            Arrangement.spacedBy(
+                3.dp
+            )
+    ) {
+
+        DaylightPromptLabel(
+            text =
+                label
+        )
+
+        if (
+            title.isNotBlank()
+        ) {
             Text(
                 text =
-                    "group · " +
-                            groupRecipients.joinToString(
-                                separator = ", "
-                            ) {
-                                it.substringBefore(" ")
-                            },
+                    title,
                 color =
-                    AccentOrange,
+                    PrimaryText,
                 fontSize =
-                    9.sp,
+                    15.5.sp,
+                lineHeight =
+                    18.sp,
+                letterSpacing =
+                    (-0.3).sp,
                 fontFamily =
                     InterfaceFont,
+                fontWeight =
+                    FontWeight.SemiBold,
                 maxLines =
                     2,
                 overflow =
-                    TextOverflow.Ellipsis,
-                modifier =
-                    Modifier
-                        .padding(
-                            horizontal = 6.dp,
-                            vertical = 3.dp
-                        )
+                    TextOverflow.Ellipsis
             )
-
-            if (
-                groupRecipients.size >= 2
-            ) {
-
-                Text(
-                    text =
-                        "enter to open the thread",
-                    color =
-                        TertiaryText,
-                    fontSize =
-                        8.sp,
-                    fontFamily =
-                        InterfaceFont,
-                    modifier =
-                        Modifier
-                            .padding(
-                                horizontal = 6.dp
-                            )
-                )
-            }
         }
 
         if (
-            groupMatches.isNotEmpty()
+            hintLine.isNotBlank()
         ) {
-
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        4.dp
-                    )
+            Text(
+                text =
+                    hintLine,
+                color =
+                    SecondaryText,
+                fontSize =
+                    8.5.sp,
+                lineHeight =
+                    10.5.sp,
+                fontFamily =
+                    InterfaceFont,
+                maxLines =
+                    1,
+                overflow =
+                    TextOverflow.Ellipsis
             )
-
-            groupMatches.forEachIndexed {
-                    index,
-                    contact ->
-
-                InlineContactRow(
-                    contact =
-                        contact,
-                    selected =
-                        index ==
-                                selectedGroupIndex,
-                    onClick = {
-                        onChooseGroupContact(
-                            contact
-                        )
-                    }
-                )
-            }
-        }
-
-        /*
-         * App matches for a "." query. Same row treatment as the
-         * contact suggestions so both feel like one mechanism.
-         */
-        if (
-            apps.isNotEmpty()
-        ) {
-            Spacer(
-                modifier =
-                    Modifier.height(
-                        4.dp
-                    )
-            )
-
-            apps.forEachIndexed {
-                    index,
-                    app ->
-
-                val selected =
-                    index ==
-                            selectedAppIndex
-
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            /*
-                             * A minimum rather than a fixed height:
-                             * the name and number together exceed
-                             * 27.dp in Poppins, which clipped the
-                             * number off the bottom.
-                             */
-                            .heightIn(
-                                min = 27.dp
-                            )
-                            .background(
-                                if (
-                                    selected
-                                ) {
-                                    HomeCommandSurface.copy(
-                                        alpha = 0.78f
-                                    )
-                                } else {
-                                    Color.Transparent
-                                },
-                                RoundedCornerShape(
-                                    7.dp
-                                )
-                            )
-                            .clickable {
-                                onChooseApp(
-                                    app
-                                )
-                            }
-                            .padding(
-                                horizontal = 6.dp,
-                                vertical = 3.dp
-                            ),
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-                    Text(
-                        text =
-                            if (
-                                selected
-                            ) {
-                                ">"
-                            } else {
-                                " "
-                            },
-                        color =
-                            AccentOrange,
-                        fontSize =
-                            9.sp,
-                        fontFamily =
-                            InterfaceFont,
-                        fontWeight =
-                            FontWeight.Bold,
-                        modifier =
-                            Modifier.width(
-                                14.dp
-                            )
-                    )
-
-                    Text(
-                        text =
-                            app.label.lowercase(),
-                        color =
-                            PrimaryText,
-                        fontSize =
-                            9.5.sp,
-                        lineHeight =
-                            10.sp,
-                        fontFamily =
-                            InterfaceFont,
-                        maxLines =
-                            1,
-                        overflow =
-                            TextOverflow.Ellipsis,
-                        modifier =
-                            Modifier.weight(
-                                1f
-                            )
-                    )
-
-                    val appIcon =
-                        rememberAppIconBitmap(
-                            app.packageName
-                        )
-
-                    if (
-                        appIcon != null
-                    ) {
-
-                        Spacer(
-                            modifier =
-                                Modifier.width(
-                                    6.dp
-                                )
-                        )
-
-                        Image(
-                            bitmap =
-                                appIcon,
-                            contentDescription =
-                                app.label,
-                            modifier =
-                                Modifier.size(
-                                    16.dp
-                                )
-                        )
-                    }
-                }
-            }
         }
     }
 }
@@ -11282,7 +11797,12 @@ fun CommandBar(
     onChooseInlineSuggestion: () -> Unit,
     visible: Boolean,
     lockedToContact: Boolean = false,
-    onBackspaceWhenEmpty: () -> Unit = {}
+    onBackspaceWhenEmpty: () -> Unit = {},
+    /*
+     * The locked contact's name, for the "@ Sarah" pill at the start
+     * of the prompt.
+     */
+    lockedContactName: String? = null
 ) {
 
     var commandFieldValue by
@@ -11320,27 +11840,11 @@ fun CommandBar(
         }
     }
 
-    val promptPulseTransition =
-        rememberInfiniteTransition(
-            label = "commandPromptPulse"
-        )
-
-    val promptScale by
-    promptPulseTransition.animateFloat(
-        initialValue =
-            if (ReduceLauncherMotion) 1f else 0.96f,
-        targetValue =
-            if (ReduceLauncherMotion) 1f else 1.12f,
-        animationSpec =
-            infiniteRepeatable(
-                animation = tween(
-                    durationMillis = 850
-                ),
-                repeatMode = RepeatMode.Reverse
-            ),
-        label = "commandPromptScale"
-    )
-
+    /*
+     * Daylight prompt (mockup C-Typing): a white rounded field with an
+     * accent border and an accent caret. A locked contact shows as an
+     * accent "@ Sarah" pill at the start.
+     */
     Box(
         modifier =
             if (
@@ -11349,7 +11853,7 @@ fun CommandBar(
                 Modifier
                     .fillMaxWidth()
                     .height(
-                        52.dp
+                        38.dp
                     )
             } else {
                 Modifier.size(
@@ -11358,97 +11862,37 @@ fun CommandBar(
             }
     ) {
 
-        if (
-            visible
-        ) {
-
-            /*
-             * Soft accent-colored halo behind the prompt bar so the
-             * command field feels like it is lifting off the screen.
-             * This uses the current launcher accent color, so it works
-             * in both light and dark mode and stays in sync with the
-             * user's Appearance selection.
-             */
-            Box(
-                modifier =
-                    Modifier
-                        .matchParentSize()
-                        .padding(
-                            horizontal = 2.dp,
-                            vertical = 3.dp
-                        )
-                        .blur(
-                            10.dp
-                        )
-                        .background(
-                            AccentOrange.copy(
-                                alpha = 0.20f
-                            ),
-                            RoundedCornerShape(
-                                13.dp
-                            )
-                        )
-            )
-
-            Box(
-                modifier =
-                    Modifier
-                        .matchParentSize()
-                        .padding(
-                            horizontal = 1.dp,
-                            vertical = 2.dp
-                        )
-                        .background(
-                            AccentOrange.copy(
-                                alpha = 0.08f
-                            ),
-                            RoundedCornerShape(
-                                12.dp
-                            )
-                        )
-                        .border(
-                            1.1.dp,
-                            AccentOrange.copy(
-                                alpha = 0.34f
-                            ),
-                            RoundedCornerShape(
-                                12.dp
-                            )
-                        )
-            )
-        }
-
         Row(
             modifier =
                 if (
                     visible
                 ) {
                     Modifier
-                        .fillMaxWidth()
-                        .height(
-                            44.dp
-                        )
-                        .align(
-                            Alignment.Center
-                        )
+                        .fillMaxSize()
                         .background(
-                            HomeCommandSurface,
+                            SurfaceBlack,
                             RoundedCornerShape(
-                                10.dp
+                                11.5.dp
                             )
                         )
                         .border(
                             1.25.dp,
-                            AccentOrange.copy(
-                                alpha = 0.88f
-                            ),
+                            AccentOrange,
                             RoundedCornerShape(
-                                10.dp
+                                11.5.dp
                             )
                         )
                         .padding(
-                            horizontal =
-                                9.dp
+                            start =
+                                if (
+                                    lockedToContact
+                                ) {
+                                    7.dp
+                                } else {
+                                    11.5.dp
+                                },
+                            end =
+                                11.5.dp
                         )
                 } else {
                     Modifier.size(
@@ -11460,57 +11904,56 @@ fun CommandBar(
         ) {
 
             if (
-                visible
+                visible &&
+                lockedToContact
             ) {
-                Box(
+
+                Text(
+                    text =
+                        lockedContactName
+                            ?.trim()
+                            ?.substringBefore(
+                                " "
+                            )
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?.let {
+                                "@ $it"
+                            }
+                            ?: "@",
+                    color =
+                        BackgroundBlack,
+                    fontSize =
+                        9.sp,
+                    lineHeight =
+                        11.sp,
+                    fontFamily =
+                        InterfaceFont,
+                    fontWeight =
+                        FontWeight.SemiBold,
+                    maxLines =
+                        1,
                     modifier =
                         Modifier
-                            .fillMaxHeight()
-                            .width(
-                                24.dp
-                            ),
-                    contentAlignment =
-                        Alignment.Center
-                ) {
-                    /*
-                     * A locked contact swaps ">" for a red "@" in the
-                     * same spot: the prompt now takes a message.
-                     */
-                    Text(
-                        text =
-                            if (
-                                lockedToContact
-                            ) {
-                                "@"
-                            } else {
-                                ">"
-                            },
-                        color =
-                            if (
-                                lockedToContact
-                            ) {
-                                LauncherCommandRed
-                            } else {
-                                PrimaryText
-                            },
-                        fontSize =
-                            22.sp,
-                        fontFamily =
-                            InterfaceFont,
-                        fontWeight =
-                            FontWeight.Bold,
-                        modifier =
-                            Modifier.graphicsLayer {
-                                scaleX = promptScale
-                                scaleY = promptScale
-                            }
-                    )
-                }
+                            .background(
+                                AccentOrange,
+                                RoundedCornerShape(
+                                    7.5.dp
+                                )
+                            )
+                            .padding(
+                                start = 6.5.dp,
+                                end = 8.dp,
+                                top = 3.dp,
+                                bottom = 3.dp
+                            )
+                )
 
                 Spacer(
                     modifier =
                         Modifier.width(
-                            3.dp
+                            8.dp
                         )
                 )
             }
@@ -11578,11 +12021,11 @@ fun CommandBar(
                         color =
                             PrimaryText,
                         fontSize =
-                            14.sp,
+                            10.5.sp,
                         fontFamily =
                             InterfaceFont,
                         fontWeight =
-                            FontWeight.Medium
+                            FontWeight.Normal
                     ),
                 cursorBrush =
                     SolidColor(
@@ -11751,104 +12194,32 @@ internal fun CommandHelpRow(
 private fun InlineContactRow(
     contact: Contact,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    query: String = ""
 ) {
 
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(
-                    min = 27.dp
-                )
-                .background(
-                    if (
-                        selected
-                    ) {
-                        HomeCommandSurface.copy(
-                            alpha = 0.78f
-                        )
-                    } else {
-                        Color.Transparent
-                    },
-                    RoundedCornerShape(
-                        7.dp
-                    )
-                )
-                .clickable {
-                    onClick()
-                }
-                .padding(
-                    horizontal = 6.dp,
-                    vertical = 3.dp
-                ),
-        verticalAlignment =
-            Alignment.CenterVertically
-    ) {
-
-        Text(
-            text =
-                if (
-                    selected
-                ) {
-                    ">"
-                } else {
-                    " "
-                },
-            color =
-                AccentOrange,
-            fontSize =
-                9.sp,
-            fontFamily =
-                InterfaceFont,
-            fontWeight =
-                FontWeight.Bold,
-            modifier =
-                Modifier.width(
-                    14.dp
-                )
-        )
-
-        Column(
-            modifier =
-                Modifier.weight(
-                    1f
-                )
-        ) {
-
-            Text(
-                text =
-                    contact.name.lowercase(),
-                color =
-                    PrimaryText,
-                fontSize =
-                    9.5.sp,
-                lineHeight =
-                    10.sp,
-                fontFamily =
-                    InterfaceFont,
-                maxLines =
-                    1,
-                overflow =
-                    TextOverflow.Ellipsis
-            )
-
-            Text(
-                text =
-                    contact.phoneNumber,
-                color =
-                    TertiaryText,
-                fontSize =
-                    6.8.sp,
-                lineHeight =
-                    7.5.sp,
-                fontFamily =
-                    InterfaceFont,
-                maxLines =
-                    1
-            )
-        }
-    }
+    /*
+     * Mockup E-Group: grey initials, name only, "Add" on the
+     * highlighted row.
+     */
+    DaylightContactRow(
+        contact =
+            contact,
+        selected =
+            false,
+        query =
+            query,
+        onClick =
+            onClick,
+        trailing =
+            if (selected) "Add" else null,
+        showDetail =
+            false,
+        avatarSizeDp =
+            26,
+        highlighted =
+            selected
+    )
 }
 
 
@@ -11859,34 +12230,24 @@ private fun SearchTargetChip(
     onClick: () -> Unit
 ) {
 
-    Box(
-        modifier =
-            Modifier
-                .height(24.dp)
-                .background(
-                    if (selected) AccentOrange else Color.Transparent,
-                    RoundedCornerShape(8.dp)
-                )
-                .border(
-                    0.75.dp,
-                    if (selected) AccentOrange else BorderGray,
-                    RoundedCornerShape(8.dp)
-                )
-                .clickable { onClick() }
-                .padding(horizontal = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-
-        Text(
-            text = label,
-            color = if (selected) BackgroundBlack else SecondaryText,
-            fontSize = 8.5.sp,
-            lineHeight = 8.5.sp,
-            fontFamily = InterfaceFont,
-            textAlign = TextAlign.Center,
-            fontWeight = FontWeight.Medium
-        )
-    }
+    /*
+     * Daylight chips (mockup C-Typing): "Google Tasks", "Todoist",
+     * filled in the accent when picked.
+     */
+    DaylightChoiceChip(
+        label =
+            label
+                .split(" ")
+                .joinToString(" ") { word ->
+                    word.replaceFirstChar {
+                        it.uppercase()
+                    }
+                },
+        selected =
+            selected,
+        onClick =
+            onClick
+    )
 }
 
 
@@ -11990,8 +12351,8 @@ internal fun findPromptAppMatches(
 }
 
 /*
- * The apps target's list, drawn over the command legend at exactly the
- * legend's size so the rest of the prompt never moves.
+ * The apps target's list, in place of the command legend and only as
+ * tall as the apps it shows.
  */
 @Composable
 private fun PromptAppListPanel(

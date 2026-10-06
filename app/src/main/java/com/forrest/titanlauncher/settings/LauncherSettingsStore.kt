@@ -13,17 +13,52 @@ class LauncherSettingsStore(
             Context.MODE_PRIVATE
         )
 
+    init {
+        applyTwoPointOhLook()
+    }
+
+    /*
+     * Prompt Launcher 2.0 (the Daylight redesign): once, on the first
+     * launch after upgrading from 1.x, the saved look (theme, accent,
+     * font, surfaces) is cleared so the new defaults show: light/dark
+     * following the phone, cobalt, Bricolage Grotesque. Everything else
+     * (chips, cards, mail apps, readability, favorites...) is kept.
+     */
+    private fun applyTwoPointOhLook() {
+
+        if (
+            preferences.getBoolean(KEY_TWO_POINT_OH_LOOK, false)
+        ) {
+            return
+        }
+
+        preferences
+            .edit()
+            .remove("theme_mode")
+            .remove("follow_system_theme")
+            .remove("accent")
+            .remove("text_color")
+            .remove("secondary_text_color")
+            .remove("interface_font")
+            .remove("app_button_surface")
+            .remove("info_card_surface")
+            .remove("command_surface")
+            .remove("button_corners")
+            .putBoolean(KEY_TWO_POINT_OH_LOOK, true)
+            .apply()
+    }
+
     fun load(): LauncherSettings {
         val themeMode =
             enumValueOrDefault(
                 preferences.getString("theme_mode", null),
-                LauncherThemeMode.DARK
+                LauncherSettings().themeMode
             )
 
         val accent =
             enumValueOrDefault(
                 preferences.getString("accent", null),
-                LauncherAccent.ORANGE
+                LauncherSettings().accent
             )
 
         val textColor =
@@ -47,7 +82,7 @@ class LauncherSettingsStore(
         val interfaceFont =
             enumValueOrDefault(
                 preferences.getString("interface_font", null),
-                LauncherInterfaceFont.MONO
+                LauncherSettings().interfaceFont
             )
 
         val appButtonSurface =
@@ -83,7 +118,7 @@ class LauncherSettingsStore(
         val buttonCorners =
             enumValueOrDefault(
                 preferences.getString("button_corners", null),
-                HomeCornerStyle.SOFT
+                LauncherSettings().buttonCorners
             )
 
         val readabilityTextSize =
@@ -112,10 +147,12 @@ class LauncherSettingsStore(
 
         return LauncherSettings(
             themeMode = themeMode,
+            followSystemTheme = preferences.getBoolean("follow_system_theme", true),
             accent = accent,
             textColor = textColor,
             secondaryTextColor = secondaryTextColor,
             showSearchTargetPicker = showSearchTargetPicker,
+            showCommandHints = preferences.getBoolean("show_command_hints", true),
             searchChipChrome = preferences.getBoolean("search_chip_chrome", true),
             searchChipClaude = preferences.getBoolean("search_chip_claude", true),
             searchChipApps = preferences.getBoolean("search_chip_apps", true),
@@ -168,10 +205,12 @@ class LauncherSettingsStore(
         preferences
             .edit()
             .putString("theme_mode", settings.themeMode.name)
+            .putBoolean("follow_system_theme", settings.followSystemTheme)
             .putString("accent", settings.accent.name)
             .putString("text_color", settings.textColor.name)
             .putString("secondary_text_color", settings.secondaryTextColor.name)
             .putBoolean("show_search_target_picker", settings.showSearchTargetPicker)
+            .putBoolean("show_command_hints", settings.showCommandHints)
             .putBoolean("search_chip_chrome", settings.searchChipChrome)
             .putBoolean("search_chip_claude", settings.searchChipClaude)
             .putBoolean("search_chip_apps", settings.searchChipApps)
@@ -216,6 +255,10 @@ class LauncherSettingsStore(
                 .put(
                     "theme_mode",
                     settings.themeMode.name
+                )
+                .put(
+                    "follow_system_theme",
+                    settings.followSystemTheme
                 )
                 .put(
                     "accent",
@@ -371,6 +414,11 @@ class LauncherSettingsStore(
                         defaults.themeMode.name
                     ),
                     defaults.themeMode
+                ),
+            followSystemTheme =
+                json.optBoolean(
+                    "follow_system_theme",
+                    defaults.followSystemTheme
                 ),
             accent =
                 enumValueOrDefault(
@@ -557,5 +605,9 @@ class LauncherSettingsStore(
                 it.name == value
             }
             ?: defaultValue
+    }
+
+    private companion object {
+        const val KEY_TWO_POINT_OH_LOOK = "two_point_oh_look_applied"
     }
 }

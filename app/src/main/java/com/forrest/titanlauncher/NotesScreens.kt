@@ -68,6 +68,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CameraAlt
@@ -331,7 +334,10 @@ fun NotesScreen(
                     .fillMaxSize()
                     .blur(notesBlur)
                     .background(BackgroundBlack)
-                    .padding(horizontal = 10.dp, vertical = 7.dp)
+                    .padding(
+                        horizontal = DaylightPageHorizontal,
+                        vertical = DaylightPageVertical
+                    )
                     .focusRequester(focusRequester)
                     .focusable()
                     .onPreviewKeyEvent { event ->
@@ -393,40 +399,55 @@ fun NotesScreen(
                         }
                     }
         ) {
+            /*
+             * Daylight header: "Notes" right of the camera with the
+             * count underneath, a round accent "+" and a close button.
+             */
             Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(start = CameraSafeStartPadding),
+                        .padding(start = DaylightCameraLane),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LauncherBackButton(onBack = onBack)
+
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Notes",
+                        color = PrimaryText,
+                        fontSize = 24.sp,
+                        lineHeight = 25.sp,
+                        letterSpacing = (-0.7).sp,
+                        fontFamily = InterfaceFont,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+
+                    Spacer(Modifier.height(2.dp))
+
+                    Text(
+                        text =
+                            when (notes.size) {
+                                0 -> "Nothing saved yet"
+                                1 -> "1 note"
+                                else -> "${notes.size} notes"
+                            },
+                        color = SecondaryText,
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        fontFamily = InterfaceFont,
+                        maxLines = 1
+                    )
+                }
 
                 Spacer(Modifier.width(8.dp))
-
-                Text(
-                    text = "notes",
-                    color = PrimaryText,
-                    fontSize = 29.sp,
-                    fontFamily = InterfaceFont,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.width(5.dp))
-
-                Text(
-                    text = "${notes.size} notes",
-                    color = TertiaryText,
-                    fontSize = 6.5.sp,
-                    fontFamily = InterfaceFont
-                )
-
-                Spacer(Modifier.weight(1f))
 
                 Box(
                     modifier =
                         Modifier
-                            .size(26.dp)
+                            .size(30.dp)
                             .background(
                                 AccentOrange,
                                 CircleShape
@@ -438,63 +459,50 @@ fun NotesScreen(
                             },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "+",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        lineHeight = 18.sp,
-                        fontFamily = FontFamily.SansSerif,
-                        fontWeight = FontWeight.Medium
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "new note",
+                        tint = BackgroundBlack,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+
+                Spacer(Modifier.width(6.dp))
+
+                MailRoundIconButton(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "close",
+                    onClick = onBack
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            /*
+             * Categories as chips, scrolling sideways if they run out
+             * of room.
+             */
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(
+                            rememberScrollState()
+                        ),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                tabLabels.forEachIndexed { index, label ->
+                    DaylightChoiceChip(
+                        label = label.replaceFirstChar { it.uppercase() },
+                        selected = index == selectedTab,
+                        onClick = {
+                            selectedTab = index
+                        }
                     )
                 }
             }
 
-            Spacer(Modifier.height(7.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                tabLabels.forEachIndexed { index, label ->
-                    val selected = index == selectedTab
-                    Column(
-                        modifier =
-                            Modifier
-                                .clickable {
-                                    selectedTab = index
-                                }
-                                .padding(horizontal = 2.dp, vertical = 3.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = label,
-                            color =
-                                if (selected) AccentOrange
-                                else SecondaryText,
-                            fontSize = 9.5.sp,
-                            lineHeight = 9.8.sp,
-                            fontFamily = InterfaceFont,
-                            fontWeight =
-                                if (selected) FontWeight.Bold
-                                else FontWeight.Normal
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Box(
-                            modifier =
-                                Modifier
-                                    .height(1.dp)
-                                    .width(22.dp)
-                                    .background(
-                                        if (selected) AccentOrange
-                                        else Color.Transparent
-                                    )
-                        )
-                    }
-                }
-            }
-
-            MinimalDivider()
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(10.dp))
 
             if (filteredNotes.isEmpty()) {
                 Box(
@@ -504,14 +512,28 @@ fun NotesScreen(
                             .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text =
-                            if (activeCategory == null) "no notes"
-                            else "no ${activeCategory.name.lowercase()} notes",
-                        color = TertiaryText,
-                        fontSize = 9.sp,
-                        fontFamily = InterfaceFont
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text =
+                                if (activeCategory == null) "No notes yet"
+                                else "No ${activeCategory.name.lowercase()} notes",
+                            color = PrimaryText,
+                            fontSize = 12.sp,
+                            fontFamily = InterfaceFont,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Spacer(Modifier.height(3.dp))
+
+                        Text(
+                            text = "Tap + to start one",
+                            color = SecondaryText,
+                            fontSize = 9.5.sp,
+                            fontFamily = InterfaceFont
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -520,7 +542,7 @@ fun NotesScreen(
                         Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     itemsIndexed(
                         items = filteredNotes,
@@ -579,20 +601,14 @@ fun NotesScreen(
                 Column(
                     modifier =
                         Modifier
+                            .padding(horizontal = 24.dp)
                             .widthIn(
-                                max = 190.dp
+                                max = 260.dp
                             )
                             .background(
                                 SurfaceBlack,
                                 RoundedCornerShape(
-                                    12.dp
-                                )
-                            )
-                            .border(
-                                0.8.dp,
-                                BorderGray,
-                                RoundedCornerShape(
-                                    12.dp
+                                    16.dp
                                 )
                             )
                             .pointerInput(Unit) {
@@ -600,21 +616,16 @@ fun NotesScreen(
                                     // Consume taps inside the card.
                                 }
                             }
-                            .padding(
-                                horizontal = 14.dp,
-                                vertical = 12.dp
-                            ),
-                    horizontalAlignment =
-                        Alignment.CenterHorizontally
+                            .padding(16.dp)
                 ) {
 
                     Text(
-                        text = "delete?",
+                        text = "Delete this note?",
                         color = PrimaryText,
                         fontSize = 13.sp,
-                        lineHeight = 13.sp,
+                        lineHeight = 15.sp,
                         fontFamily = InterfaceFont,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Bold
                     )
 
                     Spacer(
@@ -623,39 +634,39 @@ fun NotesScreen(
 
                     Text(
                         text =
-                            noteAwaitingDelete.title
-                                .ifBlank { "untitled note" },
+                            "\u201C" +
+                                    noteAwaitingDelete.title
+                                        .ifBlank { "Untitled note" } +
+                                    "\u201D can't be brought back.",
                         color = SecondaryText,
-                        fontSize = 9.sp,
-                        lineHeight = 11.sp,
+                        fontSize = 9.5.sp,
+                        lineHeight = 12.sp,
                         fontFamily = InterfaceFont,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
 
                     Spacer(
-                        modifier = Modifier.height(11.dp)
+                        modifier = Modifier.height(14.dp)
                     )
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement =
-                            Arrangement.spacedBy(7.dp)
+                            Arrangement.spacedBy(8.dp)
                     ) {
 
-                        NoteConfirmButton(
-                            label = "no",
+                        DaylightSecondaryButton(
+                            label = "Cancel",
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 pendingDeleteNote = null
                             }
                         )
 
-                        NoteConfirmButton(
-                            label = "yes",
+                        DaylightPrimaryButton(
+                            label = "Delete",
                             modifier = Modifier.weight(1f),
-                            accent = true,
                             onClick = {
 
                                 deleteNote(
@@ -710,6 +721,21 @@ private fun NoteConfirmButton(
     }
 }
 
+internal fun noteCategoryIcon(
+    category: NoteCategory
+): ImageVector =
+    when (category) {
+        NoteCategory.PERSONAL -> Icons.Outlined.Description
+        NoteCategory.WORK -> Icons.Outlined.Handyman
+        NoteCategory.IDEAS -> Icons.Outlined.Lightbulb
+        NoteCategory.JOURNAL -> Icons.Outlined.Edit
+    }
+
+/*
+ * One note as a Daylight card: the category's icon in a tinted
+ * circle, the title and date, and the first line of the note.
+ * Swipe left to delete (asks first).
+ */
 @Composable
 fun NoteInboxRow(
     note: NoteItem,
@@ -725,29 +751,29 @@ fun NoteInboxRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 52.dp)
+                .heightIn(min = 58.dp)
                 .background(
-                    SurfaceBlack,
-                    RoundedCornerShape(8.dp)
+                    ProductivityRed.copy(alpha = 0.16f),
+                    RoundedCornerShape(14.dp)
                 )
     ) {
         Text(
-            text = "DELETE",
-            color = AccentOrange,
-            fontSize = 8.sp,
+            text = "Delete",
+            color = ProductivityRed,
+            fontSize = 9.5.sp,
             fontFamily = InterfaceFont,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             modifier =
                 Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 12.dp)
+                    .padding(end = 16.dp)
         )
 
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 52.dp)
+                    .heightIn(min = 58.dp)
                     .offset {
                         IntOffset(
                             horizontalOffset.roundToInt(),
@@ -755,14 +781,13 @@ fun NoteInboxRow(
                         )
                     }
                     .background(
-                        if (selected) SurfaceBlack
-                        else BackgroundBlack,
-                        RoundedCornerShape(8.dp)
+                        SurfaceBlack,
+                        RoundedCornerShape(14.dp)
                     )
                     .border(
-                        width = if (selected) 0.75.dp else 0.dp,
-                        color = if (selected) BorderGray else Color.Transparent,
-                        shape = RoundedCornerShape(8.dp)
+                        width = if (selected) 1.25.dp else 0.dp,
+                        color = if (selected) AccentOrange else Color.Transparent,
+                        shape = RoundedCornerShape(14.dp)
                     )
                     .pointerInput(note.id) {
                         detectHorizontalDragGestures(
@@ -782,35 +807,33 @@ fun NoteInboxRow(
                             }
                         )
                     }
+                    .clip(RoundedCornerShape(14.dp))
                     .clickable { onClick() }
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            /*
-             * The category's own icon stands in for the old marker, so
-             * the list says what kind of note each row is at a glance.
-             * Fixed width keeps every title starting at the same x.
-             */
+
             Box(
-                modifier = Modifier.width(16.dp),
+                modifier =
+                    Modifier
+                        .size(30.dp)
+                        .background(
+                            AccentOrange.copy(alpha = 0.12f),
+                            CircleShape
+                        ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector =
-                        when (note.category) {
-                            NoteCategory.PERSONAL -> Icons.Outlined.Description
-                            NoteCategory.WORK -> Icons.Outlined.Handyman
-                            NoteCategory.IDEAS -> Icons.Outlined.Lightbulb
-                            NoteCategory.JOURNAL -> Icons.Outlined.Edit
-                        },
+                        noteCategoryIcon(note.category),
                     contentDescription =
                         note.category.name.lowercase(),
                     tint = AccentOrange,
-                    modifier = Modifier.size(12.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
 
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(10.dp))
 
             Column(
                 modifier = Modifier.weight(1f)
@@ -822,19 +845,22 @@ fun NoteInboxRow(
                     Text(
                         text = note.title.ifBlank { "New note" },
                         color = PrimaryText,
-                        fontSize = 9.5.sp,
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
                         fontFamily = InterfaceFont,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
 
+                    Spacer(Modifier.width(8.dp))
+
                     Text(
-                        text =
-                            "${note.category.name.lowercase()}  ${formatNoteDate(note.updatedAt)}",
-                        color = TertiaryText,
-                        fontSize = 5.8.sp,
+                        text = formatNoteDate(note.updatedAt),
+                        color = SecondaryText,
+                        fontSize = 8.sp,
+                        lineHeight = 10.sp,
                         fontFamily = InterfaceFont,
                         maxLines = 1
                     )
@@ -846,10 +872,10 @@ fun NoteInboxRow(
                     text =
                         note.body
                             .replace("\n", " ")
-                            .ifBlank { "empty note" },
+                            .ifBlank { "Empty note" },
                     color = SecondaryText,
-                    fontSize = 7.5.sp,
-                    lineHeight = 9.sp,
+                    fontSize = 9.sp,
+                    lineHeight = 11.sp,
                     fontFamily = InterfaceFont,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -1465,348 +1491,361 @@ fun NoteDetailScreen(
             Modifier
                 .fillMaxSize()
                 .background(BackgroundBlack)
-                .padding(horizontal = 10.dp, vertical = 7.dp)
+                .padding(
+                    horizontal = DaylightPageHorizontal,
+                    vertical = DaylightPageVertical
+                )
     ) {
+
+        /*
+         * Daylight header: where the note lives and that it's saved,
+         * right of the camera, with a round close button.
+         */
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = CameraSafeStartPadding),
+                    .padding(start = DaylightCameraLane),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            LauncherBackButton(onBack = onBack)
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "Note",
+                    color = PrimaryText,
+                    fontSize = 24.sp,
+                    lineHeight = 25.sp,
+                    letterSpacing = (-0.7).sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+
+                Spacer(Modifier.height(2.dp))
+
+                Text(
+                    text = "Saved · " + formatNoteDate(note.updatedAt),
+                    color = SecondaryText,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    fontFamily = InterfaceFont,
+                    maxLines = 1
+                )
+            }
 
             Spacer(Modifier.width(8.dp))
 
-            Text(
-                text = "note",
-                color = PrimaryText,
-                fontSize = 12.sp,
-                fontFamily = InterfaceFont,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(Modifier.weight(1f))
-
-            Text(
-                text = "saved",
-                color = TertiaryText,
-                fontSize = 6.sp,
-                fontFamily = InterfaceFont
+            MailRoundIconButton(
+                imageVector = Icons.Outlined.Close,
+                contentDescription = "close",
+                onClick = onBack
             )
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(12.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(
+                        rememberScrollState()
+                    ),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             NoteCategory.entries.forEach { option ->
-                val selected = category == option
-                Box(
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .height(24.dp)
-                            .background(
-                                if (selected) AccentOrange
-                                else SurfaceBlack,
-                                RoundedCornerShape(6.dp)
-                            )
-                            .border(
-                                0.75.dp,
-                                if (selected) AccentOrange else BorderGray,
-                                RoundedCornerShape(6.dp)
-                            )
-                            .clickable {
-                                category = option
-                                persist()
-                            },
-                    contentAlignment = Alignment.Center
-                ) {
-                    /*
-                     * Explicit lineHeight and centred textAlign:
-                     * without them the label is centred by its line
-                     * box, and Poppins reports more descent than
-                     * ascent, so it sits high in the button.
-                     */
-                    Text(
-                        text = option.name.lowercase(),
-                        color =
-                            if (selected) Color.White
-                            else SecondaryText,
-                        fontSize = 6.5.sp,
-                        lineHeight = 6.5.sp,
-                        fontFamily = InterfaceFont,
-                        textAlign = TextAlign.Center,
-                        fontWeight =
-                            if (selected) FontWeight.Bold
-                            else FontWeight.Normal
-                    )
-                }
+                DaylightChoiceChip(
+                    label =
+                        option.name
+                            .lowercase()
+                            .replaceFirstChar { it.uppercase() },
+                    selected = category == option,
+                    onClick = {
+                        category = option
+                        persist()
+                    }
+                )
             }
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(10.dp))
 
-        BasicTextField(
-            value = title,
-            onValueChange = { newTitle ->
-                title = newTitle.take(80)
-                persist()
-            },
-            textStyle =
-                TextStyle(
-                    color = PrimaryText,
-                    fontSize = 16.sp,
-                    lineHeight = 18.sp,
-                    fontFamily = InterfaceFont,
-                    fontWeight = FontWeight.Bold
-                ),
-            cursorBrush = SolidColor(PrimaryText),
-            singleLine = true,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    /*
-                     * A minimum rather than a fixed height: 16.sp
-                     * bold Poppins needs more room than 38.dp minus
-                     * its padding leaves, so descenders were being
-                     * clipped.
-                     */
-                    .heightIn(min = 38.dp)
-                    .background(
-                        InputSurface,
-                        RoundedCornerShape(7.dp)
-                    )
-                    .border(
-                        0.75.dp,
-                        BorderGray,
-                        RoundedCornerShape(7.dp)
-                    )
-                    .padding(horizontal = 8.dp, vertical = 9.dp)
-        )
+        /*
+         * Title and body on one card, split by a thin line.
+         */
+        DaylightCard(
+            modifier = Modifier.weight(1f),
+            horizontalPadding = 14.dp,
+            verticalPadding = 4.dp
+        ) {
 
-        Spacer(Modifier.height(5.dp))
-
-        BasicTextField(
-            value = bodyValue,
-            onValueChange = { incoming ->
-                val resetTypingStyles =
-                    shouldResetNoteTypingStylesOnEnter(
-                        oldValue = bodyValue,
-                        incoming = incoming
-                    )
-
-                if (resetTypingStyles) {
-                    activeBold = false
-                    activeItalic = false
-                    activeUnderline = false
-                }
-
-                val checklistResult =
-                    applyChecklistEnterBehavior(
-                        oldValue = bodyValue,
-                        incoming = incoming
-                    )
-
-                val nextText = checklistResult.text
-                var newRanges =
-                    adjustNoteRangesForEdit(
-                        oldText = bodyValue.text,
-                        newText = nextText,
-                        ranges = styleRanges
-                    )
-
-                if (!checklistResult.handled && !resetTypingStyles) {
-                    val insertedRange =
-                        insertedNoteTextRange(
-                            oldText = bodyValue.text,
-                            newText = nextText
-                        )
-
-                    if (
-                        insertedRange != null &&
-                        !insertedRange.collapsed
-                    ) {
-                        if (activeBold) {
-                            newRanges =
-                                newRanges +
-                                        NoteStyleRange(
-                                            start = insertedRange.start,
-                                            end = insertedRange.end,
-                                            style = NoteTextStyle.BOLD
-                                        )
+            BasicTextField(
+                value = title,
+                onValueChange = { newTitle ->
+                    title = newTitle.take(80)
+                    persist()
+                },
+                textStyle =
+                    TextStyle(
+                        color = PrimaryText,
+                        fontSize = 17.sp,
+                        lineHeight = 20.sp,
+                        letterSpacing = (-0.3).sp,
+                        fontFamily = InterfaceFont,
+                        fontWeight = FontWeight.Bold
+                    ),
+                cursorBrush = SolidColor(AccentOrange),
+                singleLine = true,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 40.dp)
+                        .padding(vertical = 10.dp),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (title.isEmpty()) {
+                            Text(
+                                text = "Title",
+                                color = TertiaryText,
+                                fontSize = 17.sp,
+                                lineHeight = 20.sp,
+                                fontFamily = InterfaceFont,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
-                        if (activeItalic) {
-                            newRanges =
-                                newRanges +
-                                        NoteStyleRange(
-                                            start = insertedRange.start,
-                                            end = insertedRange.end,
-                                            style = NoteTextStyle.ITALIC
-                                        )
-                        }
-                        if (activeUnderline) {
-                            newRanges =
-                                newRanges +
-                                        NoteStyleRange(
-                                            start = insertedRange.start,
-                                            end = insertedRange.end,
-                                            style = NoteTextStyle.UNDERLINE
-                                        )
-                        }
+                        innerTextField()
                     }
                 }
+            )
 
-                styleRanges = mergeNoteStyleRanges(newRanges)
-                bodyValue =
-                    TextFieldValue(
-                        annotatedString =
-                            buildStyledNoteText(
-                                nextText,
-                                styleRanges
-                            ),
-                        selection = checklistResult.selection,
-                        composition =
-                            if (checklistResult.handled) null
-                            else incoming.composition
-                    )
-                persist()
-            },
-            textStyle =
-                TextStyle(
-                    color = PrimaryText,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
-                    fontFamily = InterfaceFont
-                ),
-            cursorBrush = SolidColor(PrimaryText),
-            onTextLayout = { result ->
-                bodyLayoutResult = result
-            },
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .focusRequester(bodyFocusRequester)
-                    .background(
-                        InputSurface,
-                        RoundedCornerShape(7.dp)
-                    )
-                    .border(
-                        0.75.dp,
-                        BorderGray,
-                        RoundedCornerShape(7.dp)
-                    )
-                    .padding(8.dp)
-                    .pointerInput(bodyValue.text, bodyLayoutResult) {
-                        awaitPointerEventScope {
-                            var checkboxPressLineStart: Int? = null
+            DaylightRowDivider()
 
-                            while (true) {
-                                val event =
-                                    awaitPointerEvent(
-                                        androidx.compose.ui.input.pointer.PointerEventPass.Initial
-                                    )
+            Spacer(Modifier.height(8.dp))
 
-                                val change =
-                                    event.changes.firstOrNull()
-                                        ?: continue
+            BasicTextField(
+                value = bodyValue,
+                onValueChange = { incoming ->
+                    val resetTypingStyles =
+                        shouldResetNoteTypingStylesOnEnter(
+                            oldValue = bodyValue,
+                            incoming = incoming
+                        )
 
-                                val layout =
-                                    bodyLayoutResult
+                    if (resetTypingStyles) {
+                        activeBold = false
+                        activeItalic = false
+                        activeUnderline = false
+                    }
 
-                                if (change.pressed && !change.previousPressed) {
-                                    checkboxPressLineStart = null
+                    val checklistResult =
+                        applyChecklistEnterBehavior(
+                            oldValue = bodyValue,
+                            incoming = incoming
+                        )
 
-                                    if (layout != null) {
-                                        val position = change.position
+                    val nextText = checklistResult.text
+                    var newRanges =
+                        adjustNoteRangesForEdit(
+                            oldText = bodyValue.text,
+                            newText = nextText,
+                            ranges = styleRanges
+                        )
 
-                                        if (
-                                            position.x <= 72.dp.toPx() &&
-                                            position.y >= 0f &&
-                                            position.y <= layout.size.height.toFloat()
-                                        ) {
-                                            val safeY =
-                                                position.y.coerceIn(
-                                                    0f,
-                                                    (layout.size.height - 1)
-                                                        .coerceAtLeast(0)
-                                                        .toFloat()
-                                                )
-                                            val lineIndex =
-                                                layout.getLineForVerticalPosition(safeY)
-                                            val lineStart =
-                                                layout.getLineStart(lineIndex)
-                                                    .coerceIn(
-                                                        0,
-                                                        bodyValue.text.length
-                                                    )
-                                            val lineEnd =
-                                                layout.getLineEnd(
-                                                    lineIndex,
-                                                    visibleEnd = true
-                                                )
-                                                    .coerceIn(
-                                                        lineStart,
-                                                        bodyValue.text.length
-                                                    )
-                                            val lineText =
-                                                bodyValue.text.substring(
-                                                    lineStart,
-                                                    lineEnd
-                                                )
+                    if (!checklistResult.handled && !resetTypingStyles) {
+                        val insertedRange =
+                            insertedNoteTextRange(
+                                oldText = bodyValue.text,
+                                newText = nextText
+                            )
 
-                                            if (
-                                                lineText.startsWith("☐ ") ||
-                                                lineText.startsWith("☑ ")
-                                            ) {
-                                                checkboxPressLineStart = lineStart
-                                                change.consume()
-                                            }
-                                        }
-                                    }
-                                } else if (!change.pressed && change.previousPressed) {
-                                    val lineStart = checkboxPressLineStart
-
-                                    if (lineStart != null) {
-                                        change.consume()
-                                        toggleCheckboxAtOffset(lineStart)
-                                        checkboxPressLineStart = null
-                                    }
-                                } else if (checkboxPressLineStart != null) {
-                                    change.consume()
-                                }
+                        if (
+                            insertedRange != null &&
+                            !insertedRange.collapsed
+                        ) {
+                            if (activeBold) {
+                                newRanges =
+                                    newRanges +
+                                            NoteStyleRange(
+                                                start = insertedRange.start,
+                                                end = insertedRange.end,
+                                                style = NoteTextStyle.BOLD
+                                            )
+                            }
+                            if (activeItalic) {
+                                newRanges =
+                                    newRanges +
+                                            NoteStyleRange(
+                                                start = insertedRange.start,
+                                                end = insertedRange.end,
+                                                style = NoteTextStyle.ITALIC
+                                            )
+                            }
+                            if (activeUnderline) {
+                                newRanges =
+                                    newRanges +
+                                            NoteStyleRange(
+                                                start = insertedRange.start,
+                                                end = insertedRange.end,
+                                                style = NoteTextStyle.UNDERLINE
+                                            )
                             }
                         }
-                    },
-            decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    if (bodyValue.text.isBlank()) {
-                        Text(
-                            text = "write your note...",
-                            color = TertiaryText,
-                            fontSize = 10.sp,
-                            fontFamily = InterfaceFont
-                        )
                     }
-                    innerTextField()
+
+                    styleRanges = mergeNoteStyleRanges(newRanges)
+                    bodyValue =
+                        TextFieldValue(
+                            annotatedString =
+                                buildStyledNoteText(
+                                    nextText,
+                                    styleRanges
+                                ),
+                            selection = checklistResult.selection,
+                            composition =
+                                if (checklistResult.handled) null
+                                else incoming.composition
+                        )
+                    persist()
+                },
+                textStyle =
+                    TextStyle(
+                        color = PrimaryText,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        fontFamily = InterfaceFont
+                    ),
+                cursorBrush = SolidColor(AccentOrange),
+                onTextLayout = { result ->
+                    bodyLayoutResult = result
+                },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .focusRequester(bodyFocusRequester)
+                        .padding(bottom = 10.dp)
+                        .pointerInput(bodyValue.text, bodyLayoutResult) {
+                            awaitPointerEventScope {
+                                var checkboxPressLineStart: Int? = null
+
+                                while (true) {
+                                    val event =
+                                        awaitPointerEvent(
+                                            androidx.compose.ui.input.pointer.PointerEventPass.Initial
+                                        )
+
+                                    val change =
+                                        event.changes.firstOrNull()
+                                            ?: continue
+
+                                    val layout =
+                                        bodyLayoutResult
+
+                                    if (change.pressed && !change.previousPressed) {
+                                        checkboxPressLineStart = null
+
+                                        if (layout != null) {
+                                            val position = change.position
+
+                                            if (
+                                                position.x <= 72.dp.toPx() &&
+                                                position.y >= 0f &&
+                                                position.y <= layout.size.height.toFloat()
+                                            ) {
+                                                val safeY =
+                                                    position.y.coerceIn(
+                                                        0f,
+                                                        (layout.size.height - 1)
+                                                            .coerceAtLeast(0)
+                                                            .toFloat()
+                                                    )
+                                                val lineIndex =
+                                                    layout.getLineForVerticalPosition(safeY)
+                                                val lineStart =
+                                                    layout.getLineStart(lineIndex)
+                                                        .coerceIn(
+                                                            0,
+                                                            bodyValue.text.length
+                                                        )
+                                                val lineEnd =
+                                                    layout.getLineEnd(
+                                                        lineIndex,
+                                                        visibleEnd = true
+                                                    )
+                                                        .coerceIn(
+                                                            lineStart,
+                                                            bodyValue.text.length
+                                                        )
+                                                val lineText =
+                                                    bodyValue.text.substring(
+                                                        lineStart,
+                                                        lineEnd
+                                                    )
+
+                                                if (
+                                                    lineText.startsWith("☐ ") ||
+                                                    lineText.startsWith("☑ ")
+                                                ) {
+                                                    checkboxPressLineStart = lineStart
+                                                    change.consume()
+                                                }
+                                            }
+                                        }
+                                    } else if (!change.pressed && change.previousPressed) {
+                                        val lineStart = checkboxPressLineStart
+
+                                        if (lineStart != null) {
+                                            change.consume()
+                                            toggleCheckboxAtOffset(lineStart)
+                                            checkboxPressLineStart = null
+                                        }
+                                    } else if (checkboxPressLineStart != null) {
+                                        change.consume()
+                                    }
+                                }
+                            }
+                        },
+                decorationBox = { innerTextField ->
+                    Box(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        if (bodyValue.text.isBlank()) {
+                            Text(
+                                text = "Start writing…",
+                                color = TertiaryText,
+                                fontSize = 11.sp,
+                                fontFamily = InterfaceFont
+                            )
+                        }
+                        innerTextField()
+                    }
                 }
-            }
-        )
+            )
 
-        Spacer(Modifier.height(5.dp))
+        }
 
+        Spacer(Modifier.height(8.dp))
+
+        /*
+         * Formatting bar: one card, buttons light up in the accent
+         * while their style is on.
+         */
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(
+                        SurfaceBlack,
+                        RoundedCornerShape(14.dp)
+                    )
+                    .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             NoteToolbarButton(
+                modifier = Modifier.weight(1f),
                 label = "B",
                 bold = true,
                 selected = activeBold,
@@ -1815,6 +1854,7 @@ fun NoteDetailScreen(
                 }
             )
             NoteToolbarButton(
+                modifier = Modifier.weight(1f),
                 label = "I",
                 italic = true,
                 selected = activeItalic,
@@ -1823,6 +1863,7 @@ fun NoteDetailScreen(
                 }
             )
             NoteToolbarButton(
+                modifier = Modifier.weight(1f),
                 label = "U",
                 underline = true,
                 selected = activeUnderline,
@@ -1831,12 +1872,14 @@ fun NoteDetailScreen(
                 }
             )
             NoteToolbarButton(
+                modifier = Modifier.weight(1f),
                 label = "☐",
                 onClick = {
                     toggleChecklistPrefix()
                 }
             )
             NoteToolbarButton(
+                modifier = Modifier.weight(1f),
                 label = "•",
                 onClick = {
                     toggleLinePrefix(
@@ -1859,30 +1902,26 @@ internal fun NoteToolbarButton(
     italic: Boolean = false,
     underline: Boolean = false,
     selected: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Box(
         modifier =
-            Modifier
-                .width(46.dp)
-                .height(28.dp)
+            modifier
+                .height(32.dp)
                 .background(
-                    if (selected) AccentOrange else SurfaceBlack,
-                    RoundedCornerShape(6.dp)
+                    if (selected) AccentOrange.copy(alpha = 0.16f) else Color.Transparent,
+                    RoundedCornerShape(10.dp)
                 )
-                .border(
-                    0.75.dp,
-                    if (selected) AccentOrange else BorderGray,
-                    RoundedCornerShape(6.dp)
-                )
+                .clip(RoundedCornerShape(10.dp))
                 .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            color = if (selected) Color.White else PrimaryText,
-            fontSize = 10.sp,
-            lineHeight = 10.sp,
+            color = if (selected) AccentOrange else PrimaryText,
+            fontSize = 11.sp,
+            lineHeight = 11.sp,
             textAlign = TextAlign.Center,
             fontFamily = InterfaceFont,
             fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,

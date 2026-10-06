@@ -33,6 +33,7 @@ import androidx.compose.animation.togetherWith
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,6 +48,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -100,7 +104,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -659,139 +665,98 @@ internal fun SettingsMainScreen(
                     rememberScrollState()
                 )
                 .padding(
-                    horizontal = 10.dp,
-                    vertical = 7.dp
-                )
+                    horizontal = DaylightPageHorizontal,
+                    vertical = DaylightPageVertical
+                ),
+        verticalArrangement =
+            Arrangement.spacedBy(SettingsBlockGap)
     ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = CameraSafeStartPadding),
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-            Text(
-                text =
-                    "settings",
-                color =
-                    PrimaryText,
-                fontSize =
-                    34.sp,
-                fontFamily =
-                    InterfaceFont,
-                fontWeight =
-                    FontWeight.Bold,
-                textDecoration =
-                    TextDecoration.Underline
-            )
-        }
-
-        Spacer(
-            modifier = Modifier.height(9.dp)
+        /*
+         * Daylight list: a big title right of the camera, then white
+         * cards of rows with chevrons.
+         */
+        DaylightScreenTitle(
+            title = "Settings"
         )
 
         SettingsSectionLabel(
             text = "DEVICE"
         )
 
-        Spacer(
-            modifier = Modifier.height(4.dp)
-        )
+        SettingsCardGroup {
+            SettingsNavigationRow(
+                symbol = "◉",
+                title = "Appearance",
+                subtitle = "Light, dark, accent & font",
+                onClick = onAppearance
+            )
 
-        SettingsNavigationRow(
-            symbol = "◉",
-            title = "appearance",
-            subtitle = "theme, font & accent",
-            onClick = onAppearance
-        )
+            DaylightRowDivider()
 
-        Spacer(
-            modifier = Modifier.height(5.dp)
-        )
+            SettingsNavigationRow(
+                symbol = "⌂",
+                title = "Home screen",
+                subtitle = "Pickers, weather, ring & cards",
+                onClick = onHomeScreen
+            )
 
-        SettingsNavigationRow(
-            symbol = "⌂",
-            title = "home screen",
-            subtitle = "buttons, cards & layout",
-            onClick = onHomeScreen
-        )
+            DaylightRowDivider()
 
-        Spacer(
-            modifier = Modifier.height(5.dp)
-        )
+            SettingsNavigationRow(
+                symbol = "•",
+                title = "Calendars",
+                subtitle = "Home & AI calendar visibility",
+                onClick = onCalendars
+            )
 
-        SettingsNavigationRow(
-            symbol = "•",
-            title = "calendars",
-            subtitle = "home & ai calendar visibility",
-            onClick = onCalendars
-        )
+            DaylightRowDivider()
 
-        Spacer(
-            modifier = Modifier.height(5.dp)
-        )
+            SettingsNavigationRow(
+                symbol = "•••",
+                title = "Productivity bar",
+                subtitle = "24-hour ring & distracting apps",
+                onClick = onProductivityBar
+            )
 
-        SettingsNavigationRow(
-            symbol = "•••",
-            title = "productivity bar",
-            subtitle = "dots & distracting apps",
-            onClick = onProductivityBar
-        )
+            DaylightRowDivider()
 
-        Spacer(
-            modifier = Modifier.height(5.dp)
-        )
-
-        SettingsNavigationRow(
-            symbol = "•",
-            title = "noti",
-            subtitle = "hub apps & email app",
-            onClick = onNotifications
-        )
-
-        Spacer(
-            modifier = Modifier.height(11.dp)
-        )
+            SettingsNavigationRow(
+                symbol = "•",
+                title = "Notifications",
+                subtitle = "Email apps & hub apps",
+                onClick = onNotifications
+            )
+        }
 
         SettingsSectionLabel(
             text = "ACCESSIBILITY"
         )
 
-        Spacer(
-            modifier = Modifier.height(4.dp)
-        )
-
-        SettingsNavigationRow(
-            symbol = "Aa",
-            title = "readability",
-            subtitle = "type size & contrast",
-            onClick = onReadability
-        )
-
-        Spacer(
-            modifier = Modifier.height(11.dp)
-        )
+        SettingsCardGroup {
+            SettingsNavigationRow(
+                symbol = "Aa",
+                title = "Readability",
+                subtitle = "Type size, contrast & motion",
+                onClick = onReadability
+            )
+        }
 
         SettingsSectionLabel(
             text = "DATA"
         )
 
+        SettingsCardGroup {
+            SettingsNavigationRow(
+                symbol = "•",
+                title = "Backup & restore",
+                subtitle = "Save or restore launcher settings",
+                onClick = onBackupRestore
+            )
+        }
+
         Spacer(
             modifier = Modifier.height(4.dp)
         )
-
-        SettingsNavigationRow(
-            symbol = "•",
-            title = "backup & restore",
-            subtitle = "save or restore launcher settings",
-            onClick = onBackupRestore
-        )
-
-        Spacer(
-            modifier = Modifier.height(12.dp)
-        )
-
     }
 }
 
@@ -809,53 +774,46 @@ internal fun BackupRestoreSettingsScreen(
                 .background(
                     BackgroundBlack
                 )
-                .padding(
-                    horizontal = 10.dp,
-                    vertical = 7.dp
+                .verticalScroll(
+                    rememberScrollState()
                 )
+                .padding(
+                    horizontal = DaylightPageHorizontal,
+                    vertical = DaylightPageVertical
+                ),
+        verticalArrangement =
+            Arrangement.spacedBy(SettingsBlockGap)
     ) {
         SettingsHeader(
-            title = "backup & restore",
+            title = "Backup & restore",
             onBack = onBack
-        )
-
-        Spacer(
-            modifier = Modifier.height(9.dp)
         )
 
         SettingsSectionLabel(
             text = "SETTINGS"
         )
 
-        Spacer(
-            modifier = Modifier.height(4.dp)
-        )
+        SettingsCardGroup {
+            SettingsNavigationRow(
+                symbol = "•",
+                title = "Back up settings",
+                subtitle = "Save a portable settings file",
+                onClick = onBackup
+            )
 
-        SettingsNavigationRow(
-            symbol = "•",
-            title = "back up settings",
-            subtitle = "save a portable settings file",
-            onClick = onBackup
-        )
+            DaylightRowDivider()
 
-        Spacer(
-            modifier = Modifier.height(6.dp)
-        )
-
-        SettingsNavigationRow(
-            symbol = "•",
-            title = "restore settings",
-            subtitle = "load settings from a backup file",
-            onClick = onRestore
-        )
+            SettingsNavigationRow(
+                symbol = "•",
+                title = "Restore settings",
+                subtitle = "Load settings from a backup file",
+                onClick = onRestore
+            )
+        }
 
         if (
             statusText.isNotBlank()
         ) {
-            Spacer(
-                modifier = Modifier.height(8.dp)
-            )
-
             Text(
                 text = statusText,
                 color =
@@ -864,18 +822,16 @@ internal fun BackupRestoreSettingsScreen(
                             "failed"
                         )
                     ) {
-                        TertiaryText
+                        SecondaryText
                     } else {
                         AccentOrange
                     },
-                fontSize = 8.sp,
-                fontFamily = InterfaceFont
+                fontSize = 8.5.sp,
+                lineHeight = 10.5.sp,
+                fontFamily = InterfaceFont,
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
         }
-
-        Spacer(
-            modifier = Modifier.weight(1f)
-        )
     }
 }
 
@@ -896,142 +852,111 @@ internal fun AppearanceSettingsScreen(
                     rememberScrollState()
                 )
                 .padding(
-                    horizontal = 10.dp,
-                    vertical = 7.dp
-                )
+                    horizontal = DaylightPageHorizontal,
+                    vertical = DaylightPageVertical
+                ),
+        verticalArrangement =
+            Arrangement.spacedBy(SettingsBlockGap)
     ) {
         SettingsHeader(
-            title = "appearance",
+            title = "Appearance",
             onBack = onBack
         )
 
-        Spacer(
-            modifier = Modifier.height(9.dp)
-        )
-
-        SettingsSectionLabel(
-            text = "STYLE"
-        )
-
-        Spacer(
-            modifier = Modifier.height(4.dp)
-        )
-
         SettingsControlCard {
-            Column(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "accent",
-                    color = PrimaryText,
-                    fontSize = 9.5.sp,
-                    fontFamily = InterfaceFont,
-                    fontWeight = FontWeight.Medium
-                )
-
-                Spacer(
-                    modifier = Modifier.height(7.dp)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    LauncherAccent.entries.forEach { accent ->
-                        val selected =
-                            settings.accent == accent
-
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(
-                                        if (selected) 18.dp else 15.dp
-                                    )
-                                    .background(
-                                        accentColorFor(accent),
-                                        CircleShape
-                                    )
-                                    .border(
-                                        width = if (selected) 1.5.dp else 0.dp,
-                                        color = if (selected) PrimaryText else Color.Transparent,
-                                        shape = CircleShape
-                                    )
-                                    .clickable {
-                                        onSettingsChange(
-                                            settings.copy(
-                                                accent = accent
-                                            )
-                                        )
-                                    }
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(
-            modifier = Modifier.height(6.dp)
-        )
-
-        SettingsControlCard {
-            SettingsChoiceWrapRow(
-                label = "theme",
-                choices =
-                    listOf(
-                        "dark",
-                        "light",
-                        "navy",
-                        "slate",
-                        "tan",
-                        "forest"
-                    ),
-                selectedIndex =
-                    when (settings.themeMode) {
-                        LauncherThemeMode.DARK -> 0
-                        LauncherThemeMode.LIGHT -> 1
-                        LauncherThemeMode.NAVY -> 2
-                        LauncherThemeMode.SLATE -> 3
-                        LauncherThemeMode.TAN -> 4
-                        LauncherThemeMode.FOREST -> 5
-                    },
-                onSelected = { index ->
-                    onSettingsChange(
-                        settings.copy(
-                            themeMode =
-                                when (index) {
-                                    1 -> LauncherThemeMode.LIGHT
-                                    2 -> LauncherThemeMode.NAVY
-                                    3 -> LauncherThemeMode.SLATE
-                                    4 -> LauncherThemeMode.TAN
-                                    5 -> LauncherThemeMode.FOREST
-                                    else -> LauncherThemeMode.DARK
-                                }
-                        )
-                    )
-                }
+            SettingsAppearanceRow(
+                settings = settings,
+                onSettingsChange = onSettingsChange
             )
         }
 
-        Spacer(
-            modifier = Modifier.height(6.dp)
+        SettingsControlCard {
+            SettingsAccentRow(
+                settings = settings,
+                onSettingsChange = onSettingsChange
+            )
+        }
+
+        SettingsSectionLabel(
+            text = "THEME & TEXT"
         )
 
-        SettingsControlCard {
+        SettingsCardGroup {
+            SettingsChoiceWrapRow(
+                label = "Theme",
+                /*
+                 * "Auto" follows the phone's dark mode, switching
+                 * between Daylight light and Daylight dark. The other
+                 * themes are fixed.
+                 */
+                detail = "Auto follows your phone's dark mode",
+                choices =
+                    listOf(
+                        "Auto",
+                        "Light",
+                        "Dark",
+                        "Navy",
+                        "Slate",
+                        "Tan",
+                        "Forest"
+                    ),
+                selectedIndex =
+                    if (
+                        settings.followSystemTheme
+                    ) {
+                        0
+                    } else {
+                        when (settings.themeMode) {
+                            LauncherThemeMode.LIGHT -> 1
+                            LauncherThemeMode.DARK -> 2
+                            LauncherThemeMode.NAVY -> 3
+                            LauncherThemeMode.SLATE -> 4
+                            LauncherThemeMode.TAN -> 5
+                            LauncherThemeMode.FOREST -> 6
+                        }
+                    },
+                onSelected = { index ->
+                    onSettingsChange(
+                        if (
+                            index == 0
+                        ) {
+                            settings.copy(
+                                followSystemTheme = true
+                            )
+                        } else {
+                            settings.copy(
+                                followSystemTheme = false,
+                                themeMode =
+                                    when (index) {
+                                        1 -> LauncherThemeMode.LIGHT
+                                        3 -> LauncherThemeMode.NAVY
+                                        4 -> LauncherThemeMode.SLATE
+                                        5 -> LauncherThemeMode.TAN
+                                        6 -> LauncherThemeMode.FOREST
+                                        else -> LauncherThemeMode.DARK
+                                    }
+                            )
+                        }
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
             /*
-             * "default" leaves each theme to supply its own text
+             * "Default" leaves each theme to supply its own text
              * colours. Anything else overrides all three tiers.
              */
             SettingsChoiceWrapRow(
-                label = "text color",
+                label = "Text color",
                 choices =
                     listOf(
-                        "default",
-                        "white",
-                        "black",
-                        "warm",
-                        "cool",
-                        "accent"
+                        "Default",
+                        "White",
+                        "Black",
+                        "Warm",
+                        "Cool",
+                        "Accent"
                     ),
                 selectedIndex =
                     when (settings.textColor) {
@@ -1058,29 +983,25 @@ internal fun AppearanceSettingsScreen(
                     )
                 }
             )
-        }
 
-        Spacer(
-            modifier = Modifier.height(6.dp)
-        )
+            DaylightRowDivider()
 
-        SettingsControlCard {
             /*
              * Controls the muted text: labels, previews, timestamps
-             * and hints. "default" leaves it derived from the theme
+             * and hints. "Default" leaves it derived from the theme
              * and the primary text colour.
              */
             SettingsChoiceWrapRow(
-                label = "secondary text",
+                label = "Secondary text",
                 choices =
                     listOf(
-                        "default",
-                        "light",
-                        "medium",
-                        "dark",
-                        "warm",
-                        "cool",
-                        "accent"
+                        "Default",
+                        "Light",
+                        "Medium",
+                        "Dark",
+                        "Warm",
+                        "Cool",
+                        "Accent"
                     ),
                 selectedIndex =
                     when (settings.secondaryTextColor) {
@@ -1109,42 +1030,37 @@ internal fun AppearanceSettingsScreen(
                     )
                 }
             )
-        }
 
-        Spacer(
-            modifier = Modifier.height(6.dp)
-        )
+            DaylightRowDivider()
 
-        SettingsControlCard {
-            /*
-             * Four choices will not fit beside the label on a Titan
-             * sized screen, so this one wraps onto its own lines.
-             */
             SettingsChoiceWrapRow(
-                label = "interface font",
+                label = "Interface font",
                 choices =
                     listOf(
-                        "mono",
-                        "sans",
-                        "serif",
-                        "poppins"
+                        "Bricolage",
+                        "Mono",
+                        "Sans",
+                        "Serif",
+                        "Poppins"
                     ),
                 selectedIndex =
                     when (settings.interfaceFont) {
-                        LauncherInterfaceFont.MONO -> 0
-                        LauncherInterfaceFont.SANS -> 1
-                        LauncherInterfaceFont.SERIF -> 2
-                        LauncherInterfaceFont.POPPINS -> 3
+                        LauncherInterfaceFont.BRICOLAGE -> 0
+                        LauncherInterfaceFont.MONO -> 1
+                        LauncherInterfaceFont.SANS -> 2
+                        LauncherInterfaceFont.SERIF -> 3
+                        LauncherInterfaceFont.POPPINS -> 4
                     },
                 onSelected = { index ->
                     onSettingsChange(
                         settings.copy(
                             interfaceFont =
                                 when (index) {
-                                    1 -> LauncherInterfaceFont.SANS
-                                    2 -> LauncherInterfaceFont.SERIF
-                                    3 -> LauncherInterfaceFont.POPPINS
-                                    else -> LauncherInterfaceFont.MONO
+                                    1 -> LauncherInterfaceFont.MONO
+                                    2 -> LauncherInterfaceFont.SANS
+                                    3 -> LauncherInterfaceFont.SERIF
+                                    4 -> LauncherInterfaceFont.POPPINS
+                                    else -> LauncherInterfaceFont.BRICOLAGE
                                 }
                         )
                     )
@@ -1158,9 +1074,8 @@ internal fun AppearanceSettingsScreen(
          * the bottom edge instead.
          */
         Spacer(
-            modifier = Modifier.height(14.dp)
+            modifier = Modifier.height(6.dp)
         )
-
     }
 }
 
@@ -1355,33 +1270,38 @@ internal fun NotificationSettingsScreen(
 
     val composeChoices =
         listOf(
-            "" to "prompt launcher (gmail)"
+            "" to "Prompt Launcher (Gmail)"
         ) +
                 mailApps.map {
-                    it.packageName to it.label.lowercase()
+                    it.packageName to it.label
                 }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(BackgroundBlack)
-            .padding(horizontal = 10.dp, vertical = 7.dp)
+            .padding(
+                horizontal = DaylightPageHorizontal,
+                vertical = DaylightPageVertical
+            )
     ) {
         SettingsHeader(
-            title = "noti",
+            title = "Notifications",
             onBack = onBack
         )
 
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(SettingsBlockGap))
 
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+                .weight(1f)
         ) {
             item {
-                SettingsSectionLabel(text = "EMAIL APPS")
+                SettingsSectionHeader(
+                    text = "EMAIL APPS",
+                    first = true
+                )
             }
 
             /*
@@ -1389,165 +1309,155 @@ internal fun NotificationSettingsScreen(
              * first one picked opens for "mail". None picked means
              * every installed email app.
              */
-            items(
-                items = emailProviders,
-                key = { "provider:" + it.packageName }
-            ) { provider ->
-                val picked =
-                    provider.packageName in settings.mailApps
+            if (
+                emailProviders.isEmpty()
+            ) {
+                item {
+                    SettingsControlCard {
+                        SettingsRow(
+                            title = "No email apps found",
+                            detail = "Install an email app to fill the hub's email tab"
+                        )
+                    }
+                }
+            } else {
+                itemsIndexed(
+                    items = emailProviders,
+                    key = { _, provider -> "provider:" + provider.packageName }
+                ) { index, provider ->
+                    val picked =
+                        provider.packageName in settings.mailApps
 
-                SettingsControlCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSettingsChange(
-                                    settings.copy(
-                                        mailApps =
-                                            if (picked) {
-                                                settings.mailApps - provider.packageName
-                                            } else {
-                                                settings.mailApps + provider.packageName
-                                            }
-                                    )
-                                )
-                            }
-                            .padding(vertical = 1.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    val toggle: (Boolean) -> Unit = { pick ->
+                        onSettingsChange(
+                            settings.copy(
+                                mailApps =
+                                    if (pick) {
+                                        if (provider.packageName in settings.mailApps) {
+                                            settings.mailApps
+                                        } else {
+                                            settings.mailApps + provider.packageName
+                                        }
+                                    } else {
+                                        settings.mailApps - provider.packageName
+                                    }
+                            )
+                        )
+                    }
+
+                    SettingsGroupItem(
+                        isFirst = index == 0,
+                        isLast = index == emailProviders.lastIndex
                     ) {
-                        Text(
-                            text = provider.label.lowercase(),
-                            color = PrimaryText,
-                            fontSize = 11.sp,
-                            lineHeight = 12.sp,
-                            fontFamily = InterfaceFont,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        Text(
-                            text = when {
-                                !picked -> ""
-                                settings.mailApps.firstOrNull() ==
-                                        provider.packageName -> "main"
-                                else -> "on"
-                            },
-                            color = AccentOrange,
-                            fontSize = 8.sp,
-                            fontFamily = InterfaceFont,
-                            fontWeight = FontWeight.Medium
-                        )
+                        SettingsRow(
+                            title = provider.label,
+                            detail =
+                                when {
+                                    settings.mailApps.isEmpty() && index == 0 ->
+                                        "None picked: every email app shows"
+                                    picked &&
+                                            settings.mailApps.firstOrNull() ==
+                                            provider.packageName ->
+                                        "Main app: opens for \"mail\""
+                                    else -> null
+                                },
+                            onClick = {
+                                toggle(!picked)
+                            }
+                        ) {
+                            DaylightSwitch(
+                                checked = picked,
+                                onCheckedChange = toggle
+                            )
+                        }
                     }
                 }
             }
 
             item {
-                Spacer(Modifier.height(3.dp))
-                SettingsSectionLabel(text = "COMPOSE EMAIL IN")
+                SettingsSectionHeader(
+                    text = "COMPOSE EMAIL IN"
+                )
             }
 
-            items(
+            itemsIndexed(
                 items = composeChoices,
-                key = { "compose:" + it.first }
-            ) { (packageName, label) ->
+                key = { _, choice -> "compose:" + choice.first }
+            ) { index, (packageName, label) ->
                 val selected =
                     settings.mailComposeApp == packageName
 
-                SettingsControlCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSettingsChange(
-                                    settings.copy(
-                                        mailComposeApp = packageName
-                                    )
+                SettingsGroupItem(
+                    isFirst = index == 0,
+                    isLast = index == composeChoices.lastIndex
+                ) {
+                    SettingsRow(
+                        title = label,
+                        onClick = {
+                            onSettingsChange(
+                                settings.copy(
+                                    mailComposeApp = packageName
                                 )
-                            }
-                            .padding(vertical = 1.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            )
+                        }
                     ) {
-                        Text(
-                            text = label,
-                            color = PrimaryText,
-                            fontSize = 11.sp,
-                            lineHeight = 12.sp,
-                            fontFamily = InterfaceFont,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        Text(
-                            text = if (selected) "selected" else "",
-                            color = AccentOrange,
-                            fontSize = 8.sp,
-                            fontFamily = InterfaceFont,
-                            fontWeight = FontWeight.Medium
+                        SettingsRadioMark(
+                            selected = selected
                         )
                     }
                 }
             }
 
             item {
-                Spacer(Modifier.height(3.dp))
-                SettingsSectionLabel(text = "HUB APPS")
+                SettingsSectionHeader(
+                    text = "HUB APPS"
+                )
             }
 
-            items(
+            itemsIndexed(
                 items = apps,
-                key = { it.packageName }
-            ) { app ->
+                key = { _, app -> app.packageName }
+            ) { index, app ->
                 val enabled =
                     app.packageName !in settings.mutedNotificationApps
 
-                SettingsControlCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                val updatedMuted =
-                                    settings.mutedNotificationApps.toMutableSet()
+                val toggle: (Boolean) -> Unit = { show ->
+                    val updatedMuted =
+                        settings.mutedNotificationApps.toMutableSet()
 
-                                if (enabled) {
-                                    updatedMuted.add(app.packageName)
-                                } else {
-                                    updatedMuted.remove(app.packageName)
-                                }
+                    if (show) {
+                        updatedMuted.remove(app.packageName)
+                    } else {
+                        updatedMuted.add(app.packageName)
+                    }
 
-                                onSettingsChange(
-                                    settings.copy(
-                                        mutedNotificationApps = updatedMuted
-                                    )
-                                )
-                            }
-                            .padding(vertical = 1.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = app.label,
-                            color = PrimaryText,
-                            fontSize = 11.sp,
-                            lineHeight = 12.sp,
-                            fontFamily = InterfaceFont,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                    onSettingsChange(
+                        settings.copy(
+                            mutedNotificationApps = updatedMuted
                         )
+                    )
+                }
 
-                        Text(
-                            text = if (enabled) "on" else "off",
-                            color = if (enabled) AccentOrange else TertiaryText,
-                            fontSize = 8.sp,
-                            fontFamily = InterfaceFont,
-                            fontWeight = FontWeight.Medium
+                SettingsGroupItem(
+                    isFirst = index == 0,
+                    isLast = index == apps.lastIndex
+                ) {
+                    SettingsRow(
+                        title = app.label,
+                        onClick = {
+                            toggle(!enabled)
+                        }
+                    ) {
+                        DaylightSwitch(
+                            checked = enabled,
+                            onCheckedChange = toggle
                         )
                     }
                 }
+            }
+
+            item {
+                Spacer(Modifier.height(12.dp))
             }
         }
     }
@@ -1578,9 +1488,9 @@ internal fun CalendarVisibilitySettingsScreen(
             ?: if (
                 currentEventCalendarId.isNullOrBlank()
             ) {
-                "not set"
+                "Not set"
             } else {
-                "selected calendar"
+                "Selected calendar"
             }
 
     Column(
@@ -1592,15 +1502,15 @@ internal fun CalendarVisibilitySettingsScreen(
                 )
                 .padding(
                     horizontal =
-                        10.dp,
+                        DaylightPageHorizontal,
                     vertical =
-                        7.dp
+                        DaylightPageVertical
                 )
     ) {
 
         SettingsHeader(
             title =
-                "calendars",
+                "Calendars",
             onBack =
                 onBack
         )
@@ -1608,7 +1518,7 @@ internal fun CalendarVisibilitySettingsScreen(
         Spacer(
             modifier =
                 Modifier.height(
-                    7.dp
+                    SettingsBlockGap
                 )
         )
 
@@ -1618,18 +1528,16 @@ internal fun CalendarVisibilitySettingsScreen(
                     .fillMaxWidth()
                     .weight(
                         1f
-                    ),
-            verticalArrangement =
-                Arrangement.spacedBy(
-                    5.dp
-                )
+                    )
         ) {
 
             item {
 
-                SettingsSectionLabel(
+                SettingsSectionHeader(
                     text =
-                        "EVENT CREATION"
+                        "EVENT CREATION",
+                    first =
+                        true
                 )
             }
 
@@ -1637,82 +1545,36 @@ internal fun CalendarVisibilitySettingsScreen(
 
                 SettingsControlCard {
 
-                    Column(
+                    SettingsRow(
+                        title =
+                            "Event calendar",
+                        detail =
+                            currentEventCalendarName
+                    )
+
+                    Text(
+                        text =
+                            "calendarsetup controls where \":\" adds events",
+                        color =
+                            TertiaryText,
+                        fontSize =
+                            8.sp,
+                        lineHeight =
+                            10.sp,
+                        fontFamily =
+                            InterfaceFont,
                         modifier =
-                            Modifier.fillMaxWidth()
-                    ) {
-
-                        Text(
-                            text =
-                                "event calendar",
-                            color =
-                                PrimaryText,
-                            fontSize =
-                                9.5.sp,
-                            fontFamily =
-                                InterfaceFont,
-                            fontWeight =
-                                FontWeight.Medium
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(
-                                    3.dp
-                                )
-                        )
-
-                        Text(
-                            text =
-                                currentEventCalendarName
-                                    .lowercase(),
-                            color =
-                                AccentOrange,
-                            fontSize =
-                                8.sp,
-                            fontFamily =
-                                InterfaceFont,
-                            fontWeight =
-                                FontWeight.Medium,
-                            maxLines =
-                                1,
-                            overflow =
-                                TextOverflow.Ellipsis
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(
-                                    2.dp
-                                )
-                        )
-
-                        Text(
-                            text =
-                                "calendarsetup controls where \":\" adds events",
-                            color =
-                                TertiaryText,
-                            fontSize =
-                                6.5.sp,
-                            lineHeight =
-                                7.sp,
-                            fontFamily =
-                                InterfaceFont
-                        )
-                    }
+                            Modifier.padding(
+                                bottom =
+                                    9.dp
+                            )
+                    )
                 }
             }
 
             item {
 
-                Spacer(
-                    modifier =
-                        Modifier.height(
-                            3.dp
-                        )
-                )
-
-                SettingsSectionLabel(
+                SettingsSectionHeader(
                     text =
                         "VISIBLE CALENDARS"
                 )
@@ -1720,23 +1582,13 @@ internal fun CalendarVisibilitySettingsScreen(
 
             item {
 
-                Text(
+                SettingsFootnote(
                     text =
-                        "controls the home calendar card + ai assist",
-                    color =
-                        TertiaryText,
-                    fontSize =
-                        6.5.sp,
-                    lineHeight =
-                        7.sp,
-                    fontFamily =
-                        InterfaceFont,
+                        "Controls the home calendar card + AI assist",
                     modifier =
                         Modifier.padding(
-                            horizontal =
-                                2.dp,
-                            vertical =
-                                1.dp
+                            bottom =
+                                6.dp
                         )
                 )
             }
@@ -1750,15 +1602,11 @@ internal fun CalendarVisibilitySettingsScreen(
 
                     SettingsControlCard {
 
-                        Text(
-                            text =
-                                "loading calendars...",
-                            color =
-                                TertiaryText,
-                            fontSize =
-                                8.sp,
-                            fontFamily =
-                                InterfaceFont
+                        SettingsRow(
+                            title =
+                                "Loading calendars...",
+                            titleColor =
+                                SecondaryText
                         )
                     }
                 }
@@ -1771,43 +1619,27 @@ internal fun CalendarVisibilitySettingsScreen(
 
                     SettingsControlCard {
 
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onRefresh()
-                                    },
-                            verticalAlignment =
-                                Alignment.CenterVertically
+                        SettingsRow(
+                            title =
+                                "No calendars loaded",
+                            titleColor =
+                                SecondaryText,
+                            onClick = {
+                                onRefresh()
+                            }
                         ) {
 
                             Text(
                                 text =
-                                    "no calendars loaded",
-                                color =
-                                    TertiaryText,
-                                fontSize =
-                                    8.sp,
-                                fontFamily =
-                                    InterfaceFont,
-                                modifier =
-                                    Modifier.weight(
-                                        1f
-                                    )
-                            )
-
-                            Text(
-                                text =
-                                    "refresh",
+                                    "Refresh",
                                 color =
                                     AccentOrange,
                                 fontSize =
-                                    7.5.sp,
+                                    9.sp,
                                 fontFamily =
                                     InterfaceFont,
                                 fontWeight =
-                                    FontWeight.Medium
+                                    FontWeight.SemiBold
                             )
                         }
                     }
@@ -1815,87 +1647,53 @@ internal fun CalendarVisibilitySettingsScreen(
 
             } else {
 
-                items(
+                itemsIndexed(
                     items =
                         calendars,
                     key = {
-                        it.id
+                            _,
+                            calendar ->
+
+                        calendar.id
                     }
                 ) {
+                        index,
                         calendar ->
 
                     val visible =
                         calendar.id !in
                                 hiddenCalendarIds
 
-                    SettingsControlCard {
+                    SettingsGroupItem(
+                        isFirst =
+                            index == 0,
+                        isLast =
+                            index == calendars.lastIndex
+                    ) {
 
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
+                        SettingsRow(
+                            title =
+                                calendar.summary,
+                            onClick = {
 
-                                        onToggleCalendar(
-                                            calendar.id,
-                                            !visible
-                                        )
-                                    }
-                                    .padding(
-                                        vertical =
-                                            1.dp
-                                    ),
-                            verticalAlignment =
-                                Alignment.CenterVertically
+                                onToggleCalendar(
+                                    calendar.id,
+                                    !visible
+                                )
+                            }
                         ) {
 
-                            Text(
-                                text =
-                                    calendar.summary
-                                        .lowercase(),
-                                color =
-                                    PrimaryText,
-                                fontSize =
-                                    10.5.sp,
-                                lineHeight =
-                                    11.sp,
-                                fontFamily =
-                                    InterfaceFont,
-                                fontWeight =
-                                    FontWeight.Medium,
-                                maxLines =
-                                    1,
-                                overflow =
-                                    TextOverflow.Ellipsis,
-                                modifier =
-                                    Modifier.weight(
-                                        1f
-                                    )
-                            )
+                            DaylightSwitch(
+                                checked =
+                                    visible,
+                                onCheckedChange = {
+                                        show ->
 
-                            Text(
-                                text =
-                                    if (
-                                        visible
-                                    ) {
-                                        "on"
-                                    } else {
-                                        "off"
-                                    },
-                                color =
-                                    if (
-                                        visible
-                                    ) {
-                                        AccentOrange
-                                    } else {
-                                        TertiaryText
-                                    },
-                                fontSize =
-                                    8.sp,
-                                fontFamily =
-                                    InterfaceFont,
-                                fontWeight =
-                                    FontWeight.Medium
+                                    onToggleCalendar(
+                                        calendar.id,
+                                        show
+                                    )
+                                }
                             )
                         }
                     }
@@ -1903,21 +1701,15 @@ internal fun CalendarVisibilitySettingsScreen(
 
                 item {
 
-                    Text(
+                    SettingsFootnote(
                         text =
                             if (
                                 loading
                             ) {
-                                "refreshing..."
+                                "Refreshing..."
                             } else {
-                                "tap a calendar to show or hide it"
+                                "Tap a calendar to show or hide it. Tap here to refresh."
                             },
-                        color =
-                            TertiaryText,
-                        fontSize =
-                            6.5.sp,
-                        fontFamily =
-                            InterfaceFont,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -1925,8 +1717,10 @@ internal fun CalendarVisibilitySettingsScreen(
                                     onRefresh()
                                 }
                                 .padding(
-                                    vertical =
-                                        3.dp
+                                    top =
+                                        8.dp,
+                                    bottom =
+                                        12.dp
                                 )
                     )
                 }
@@ -1949,360 +1743,320 @@ internal fun HomeScreenSettingsScreen(
                 .background(
                     BackgroundBlack
                 )
-                .padding(
-                    horizontal = 10.dp,
-                    vertical = 7.dp
+                .verticalScroll(
+                    rememberScrollState()
                 )
+                .padding(
+                    horizontal = DaylightPageHorizontal,
+                    vertical = DaylightPageVertical
+                ),
+        verticalArrangement =
+            Arrangement.spacedBy(SettingsBlockGap)
     ) {
         SettingsHeader(
-            title = "home screen",
+            title = "Home screen",
             onBack = onBack
         )
 
-        Spacer(
-            modifier = Modifier.height(7.dp)
-        )
+        SettingsControlCard {
+            SettingsAppearanceRow(
+                settings = settings,
+                onSettingsChange = onSettingsChange
+            )
+        }
 
-        LazyColumn(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            verticalArrangement =
-                Arrangement.spacedBy(6.dp)
-        ) {
-            item {
-                SettingsSectionLabel(
-                    text = "SURFACES"
+        SettingsCardGroup {
+
+            /*
+             * The command legend above the prompt. When on, it can
+             * also be collapsed to its header by tapping it.
+             */
+            SettingsToggleRow(
+                label = "Commands box",
+                detail = "Command list above the prompt · tap its header to collapse",
+                enabled = settings.showCommandHints,
+                onToggle = { enabled ->
+                    onSettingsChange(
+                        settings.copy(
+                            showCommandHints = enabled
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            /*
+             * Chrome / Claude / Apps chips above the prompt when free
+             * text is typed. The chips themselves are picked below the
+             * row while the picker is on.
+             */
+            val searchChips =
+                listOf(
+                    "Chrome" to settings.searchChipChrome,
+                    "Claude" to settings.searchChipClaude,
+                    "Apps" to settings.searchChipApps
                 )
-            }
 
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "app buttons",
-                        choices = listOf("black", "charcoal", "gray"),
-                        selectedIndex = settings.appButtonSurface.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    appButtonSurface = HomeSurfaceTone.entries[index]
-                                )
-                            )
-                        }
+            SettingsToggleRow(
+                label = "Search picker",
+                detail =
+                    searchChips
+                        .filter { it.second }
+                        .joinToString(", ") { it.first }
+                        .ifBlank { "No chips picked" },
+                enabled = settings.showSearchTargetPicker,
+                onToggle = { enabled ->
+                    onSettingsChange(
+                        settings.copy(
+                            showSearchTargetPicker = enabled
+                        )
                     )
                 }
-            }
+            )
 
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "info cards",
-                        choices = listOf("black", "charcoal", "gray"),
-                        selectedIndex = settings.infoCardSurface.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    infoCardSurface = HomeSurfaceTone.entries[index]
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "command box",
-                        choices = listOf("dark", "medium", "light"),
-                        selectedIndex = settings.commandSurface.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    commandSurface = CommandSurfaceTone.entries[index]
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            item {
-                Spacer(
-                    modifier = Modifier.height(3.dp)
-                )
-                SettingsSectionLabel(
-                    text = "BUTTONS"
-                )
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "icon size",
-                        choices = listOf("small", "normal", "large"),
-                        selectedIndex = settings.buttonIconSize.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    buttonIconSize = HomeElementSize.entries[index]
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "label size",
-                        choices = listOf("small", "normal", "large"),
-                        selectedIndex = settings.buttonLabelSize.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    buttonLabelSize = HomeElementSize.entries[index]
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "corners",
-                        choices = listOf("square", "soft", "round"),
-                        selectedIndex = settings.buttonCorners.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    buttonCorners = HomeCornerStyle.entries[index]
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            item {
-                Spacer(
-                    modifier = Modifier.height(3.dp)
-                )
-                SettingsSectionLabel(
-                    text = "HOME ELEMENTS"
-                )
-            }
-
-            item {
-                SettingsControlCard {
-                    Column {
-                        SettingsToggleRow(
-                            label = "search picker",
-                            enabled = settings.showSearchTargetPicker,
-                            onToggle = { enabled ->
-                                onSettingsChange(
-                                    settings.copy(
-                                        showSearchTargetPicker = enabled
-                                    )
-                                )
+            if (
+                settings.showSearchTargetPicker
+            ) {
+                SettingsChipToggles(
+                    options = searchChips,
+                    onToggle = { index, enabled ->
+                        onSettingsChange(
+                            when (index) {
+                                0 -> settings.copy(searchChipChrome = enabled)
+                                1 -> settings.copy(searchChipClaude = enabled)
+                                else -> settings.copy(searchChipApps = enabled)
                             }
                         )
-
-                        /*
-                         * Pick which chips appear above the prompt.
-                         * Only shown while the picker is on.
-                         */
-                        if (
-                            settings.showSearchTargetPicker
-                        ) {
-                            Spacer(
-                                modifier = Modifier.height(6.dp)
-                            )
-
-                            SettingsToggleRow(
-                                label = "   chrome",
-                                enabled = settings.searchChipChrome,
-                                onToggle = { enabled ->
-                                    onSettingsChange(
-                                        settings.copy(
-                                            searchChipChrome = enabled
-                                        )
-                                    )
-                                }
-                            )
-
-                            Spacer(
-                                modifier = Modifier.height(6.dp)
-                            )
-
-                            SettingsToggleRow(
-                                label = "   claude",
-                                enabled = settings.searchChipClaude,
-                                onToggle = { enabled ->
-                                    onSettingsChange(
-                                        settings.copy(
-                                            searchChipClaude = enabled
-                                        )
-                                    )
-                                }
-                            )
-
-                            Spacer(
-                                modifier = Modifier.height(6.dp)
-                            )
-
-                            SettingsToggleRow(
-                                label = "   apps",
-                                enabled = settings.searchChipApps,
-                                onToggle = { enabled ->
-                                    onSettingsChange(
-                                        settings.copy(
-                                            searchChipApps = enabled
-                                        )
-                                    )
-                                }
-                            )
-                        }
                     }
-                }
+                )
             }
+
+            DaylightRowDivider()
 
             /*
              * Chips above the prompt while typing "+": add the task
              * to Google Tasks or Todoist.
              */
-            item {
-                SettingsControlCard {
-                    Column {
-                        SettingsToggleRow(
-                            label = "task picker",
-                            enabled = settings.showTaskPicker,
-                            onToggle = { enabled ->
-                                onSettingsChange(
-                                    settings.copy(
-                                        showTaskPicker = enabled
-                                    )
-                                )
+            val taskChips =
+                listOf(
+                    "Google Tasks" to settings.taskChipGoogle,
+                    "Todoist" to settings.taskChipTodoist
+                )
+
+            SettingsToggleRow(
+                label = "Task picker",
+                detail =
+                    taskChips
+                        .filter { it.second }
+                        .joinToString(", ") { it.first }
+                        .ifBlank { "No chips picked" },
+                enabled = settings.showTaskPicker,
+                onToggle = { enabled ->
+                    onSettingsChange(
+                        settings.copy(
+                            showTaskPicker = enabled
+                        )
+                    )
+                }
+            )
+
+            if (
+                settings.showTaskPicker
+            ) {
+                SettingsChipToggles(
+                    options = taskChips,
+                    onToggle = { index, enabled ->
+                        onSettingsChange(
+                            if (index == 0) {
+                                settings.copy(taskChipGoogle = enabled)
+                            } else {
+                                settings.copy(taskChipTodoist = enabled)
                             }
                         )
-
-                        if (
-                            settings.showTaskPicker
-                        ) {
-                            Spacer(
-                                modifier = Modifier.height(6.dp)
-                            )
-
-                            SettingsToggleRow(
-                                label = "   google tasks",
-                                enabled = settings.taskChipGoogle,
-                                onToggle = { enabled ->
-                                    onSettingsChange(
-                                        settings.copy(
-                                            taskChipGoogle = enabled
-                                        )
-                                    )
-                                }
-                            )
-
-                            Spacer(
-                                modifier = Modifier.height(6.dp)
-                            )
-
-                            SettingsToggleRow(
-                                label = "   todoist",
-                                enabled = settings.taskChipTodoist,
-                                onToggle = { enabled ->
-                                    onSettingsChange(
-                                        settings.copy(
-                                            taskChipTodoist = enabled
-                                        )
-                                    )
-                                }
-                            )
-                        }
                     }
-                }
+                )
             }
 
-            item {
-                SettingsControlCard {
-                    Column {
-                        SettingsToggleRow(
-                            label = "weather",
-                            enabled = settings.showWeather,
-                            onToggle = { enabled ->
-                                onSettingsChange(
-                                    settings.copy(
-                                        showWeather = enabled
-                                    )
-                                )
-                            }
-                        )
+            DaylightRowDivider()
 
-                        /*
-                         * Off shows °F, on shows °C.
-                         */
-                        if (
-                            settings.showWeather
-                        ) {
-                            Spacer(
-                                modifier = Modifier.height(6.dp)
-                            )
-
-                            SettingsToggleRow(
-                                label = "   celsius (°C)",
-                                enabled = settings.weatherCelsius,
-                                onToggle = { enabled ->
-                                    onSettingsChange(
-                                        settings.copy(
-                                            weatherCelsius = enabled
-                                        )
-                                    )
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsToggleRow(
-                        label = "calendar card",
-                        enabled = settings.showCalendarCard,
-                        onToggle = { enabled ->
-                            onSettingsChange(
-                                settings.copy(
-                                    showCalendarCard = enabled
-                                )
-                            )
+            /*
+             * Off hides the weather; °F / °C show it in that unit.
+             * Turning it off keeps the unit for next time.
+             */
+            SettingsChoiceRow(
+                label = "Weather",
+                choices = listOf("Off", "°F", "°C"),
+                selectedIndex =
+                    when {
+                        !settings.showWeather -> 0
+                        settings.weatherCelsius -> 2
+                        else -> 1
+                    },
+                onSelected = { index ->
+                    onSettingsChange(
+                        when (index) {
+                            0 -> settings.copy(showWeather = false)
+                            1 -> settings.copy(showWeather = true, weatherCelsius = false)
+                            else -> settings.copy(showWeather = true, weatherCelsius = true)
                         }
                     )
                 }
-            }
+            )
 
-            item {
-                SettingsControlCard {
-                    SettingsToggleRow(
-                        label = "attention card",
-                        enabled = settings.showAttentionCard,
-                        onToggle = { enabled ->
-                            onSettingsChange(
-                                settings.copy(
-                                    showAttentionCard = enabled
-                                )
-                            )
-                        }
+            DaylightRowDivider()
+
+            SettingsToggleRow(
+                label = "24-hour ring",
+                detail = "Flags hours with 20+ min on distracting apps",
+                enabled = settings.showProductivityDots,
+                onToggle = { enabled ->
+                    onSettingsChange(
+                        settings.copy(
+                            showProductivityDots = enabled
+                        )
                     )
                 }
-            }
+            )
 
+            DaylightRowDivider()
+
+            SettingsToggleRow(
+                label = "Calendar card",
+                detail = "Your next event on the home screen",
+                enabled = settings.showCalendarCard,
+                onToggle = { enabled ->
+                    onSettingsChange(
+                        settings.copy(
+                            showCalendarCard = enabled
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsToggleRow(
+                label = "Attention card",
+                enabled = settings.showAttentionCard,
+                onToggle = { enabled ->
+                    onSettingsChange(
+                        settings.copy(
+                            showAttentionCard = enabled
+                        )
+                    )
+                }
+            )
         }
+
+        SettingsControlCard {
+            SettingsAccentRow(
+                settings = settings,
+                onSettingsChange = onSettingsChange
+            )
+        }
+
+        SettingsSectionLabel(
+            text = "SURFACES"
+        )
+
+        SettingsCardGroup {
+            SettingsChoiceRow(
+                label = "App buttons",
+                choices = listOf("Black", "Charcoal", "Gray"),
+                selectedIndex = settings.appButtonSurface.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            appButtonSurface = HomeSurfaceTone.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Info cards",
+                choices = listOf("Black", "Charcoal", "Gray"),
+                selectedIndex = settings.infoCardSurface.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            infoCardSurface = HomeSurfaceTone.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Command box",
+                choices = listOf("Dark", "Medium", "Light"),
+                selectedIndex = settings.commandSurface.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            commandSurface = CommandSurfaceTone.entries[index]
+                        )
+                    )
+                }
+            )
+        }
+
+        SettingsSectionLabel(
+            text = "BUTTONS"
+        )
+
+        SettingsCardGroup {
+            SettingsChoiceRow(
+                label = "Icon size",
+                choices = listOf("Small", "Normal", "Large"),
+                selectedIndex = settings.buttonIconSize.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            buttonIconSize = HomeElementSize.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Label size",
+                choices = listOf("Small", "Normal", "Large"),
+                selectedIndex = settings.buttonLabelSize.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            buttonLabelSize = HomeElementSize.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Corners",
+                choices = listOf("Square", "Soft", "Round"),
+                selectedIndex = settings.buttonCorners.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            buttonCorners = HomeCornerStyle.entries[index]
+                        )
+                    )
+                }
+            )
+        }
+
+        Spacer(
+            modifier = Modifier.height(6.dp)
+        )
     }
 }
 
@@ -2332,37 +2086,37 @@ internal fun ProductivityBarSettingsScreen(
                     BackgroundBlack
                 )
                 .padding(
-                    horizontal = 10.dp,
-                    vertical = 7.dp
+                    horizontal = DaylightPageHorizontal,
+                    vertical = DaylightPageVertical
                 )
     ) {
         SettingsHeader(
-            title = "productivity bar",
+            title = "Productivity bar",
             onBack = onBack
         )
 
         Spacer(
-            modifier = Modifier.height(7.dp)
+            modifier = Modifier.height(SettingsBlockGap)
         )
 
         LazyColumn(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-            verticalArrangement =
-                Arrangement.spacedBy(6.dp)
+                    .weight(1f)
         ) {
             item {
-                SettingsSectionLabel(
-                    text = "BAR"
+                SettingsSectionHeader(
+                    text = "RING",
+                    first = true
                 )
             }
 
             item {
                 SettingsControlCard {
                     SettingsToggleRow(
-                        label = "productivity dots",
+                        label = "24-hour ring",
+                        detail = "Flags hours with 20+ min on distracting apps",
                         enabled = settings.showProductivityDots,
                         onToggle = { enabled ->
                             onSettingsChange(
@@ -2377,11 +2131,7 @@ internal fun ProductivityBarSettingsScreen(
             }
 
             item {
-                Spacer(
-                    modifier = Modifier.height(3.dp)
-                )
-
-                SettingsSectionLabel(
+                SettingsSectionHeader(
                     text = "DISTRACTING APPS"
                 )
             }
@@ -2391,26 +2141,23 @@ internal fun ProductivityBarSettingsScreen(
             ) {
                 item {
                     SettingsControlCard {
-                        Text(
-                            text =
-                                "no installed apps found",
-                            color =
-                                SecondaryText,
-                            fontSize =
-                                8.sp,
-                            fontFamily =
-                                InterfaceFont
+                        SettingsRow(
+                            title = "No installed apps found",
+                            titleColor = SecondaryText
                         )
                     }
                 }
             } else {
-                items(
+                itemsIndexed(
                     installedApps,
-                    key = {
-                        it.packageName
+                    key = { _, app ->
+                        app.packageName
                     }
-                ) { app ->
-                    SettingsControlCard {
+                ) { index, app ->
+                    SettingsGroupItem(
+                        isFirst = index == 0,
+                        isLast = index == installedApps.lastIndex
+                    ) {
                         SettingsAppToggleRow(
                             appName =
                                 app.label,
@@ -2450,6 +2197,10 @@ internal fun ProductivityBarSettingsScreen(
                     }
                 }
             }
+
+            item {
+                Spacer(Modifier.height(12.dp))
+            }
         }
     }
 }
@@ -2467,163 +2218,134 @@ internal fun ReadabilitySettingsScreen(
                 .background(
                     BackgroundBlack
                 )
-                .padding(
-                    horizontal = 10.dp,
-                    vertical = 7.dp
+                .verticalScroll(
+                    rememberScrollState()
                 )
+                .padding(
+                    horizontal = DaylightPageHorizontal,
+                    vertical = DaylightPageVertical
+                ),
+        verticalArrangement =
+            Arrangement.spacedBy(SettingsBlockGap)
     ) {
         SettingsHeader(
-            title = "readability",
+            title = "Readability",
             onBack = onBack
         )
 
-        Spacer(
-            modifier = Modifier.height(7.dp)
+        SettingsSectionLabel(
+            text = "TEXT"
         )
 
-        LazyColumn(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            verticalArrangement =
-                Arrangement.spacedBy(6.dp)
-        ) {
-            item {
-                SettingsSectionLabel(
-                    text = "TEXT"
-                )
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "text size",
-                        choices = listOf(
-                            "small",
-                            "normal",
-                            "large",
-                            "x-large"
-                        ),
-                        selectedIndex =
-                            settings.readabilityTextSize.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    readabilityTextSize =
-                                        ReadabilityTextSize.entries[index]
-                                )
-                            )
-                        }
+        SettingsCardGroup {
+            SettingsChoiceRow(
+                label = "Text size",
+                choices = listOf(
+                    "Small",
+                    "Normal",
+                    "Large",
+                    "X-large"
+                ),
+                selectedIndex =
+                    settings.readabilityTextSize.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            readabilityTextSize =
+                                ReadabilityTextSize.entries[index]
+                        )
                     )
                 }
-            }
+            )
 
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "text weight",
-                        choices = listOf(
-                            "normal",
-                            "medium",
-                            "bold"
-                        ),
-                        selectedIndex =
-                            settings.readabilityTextWeight.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    readabilityTextWeight =
-                                        ReadabilityTextWeight.entries[index]
-                                )
-                            )
-                        }
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Text weight",
+                choices = listOf(
+                    "Normal",
+                    "Medium",
+                    "Bold"
+                ),
+                selectedIndex =
+                    settings.readabilityTextWeight.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            readabilityTextWeight =
+                                ReadabilityTextWeight.entries[index]
+                        )
                     )
                 }
-            }
-
-            item {
-                Spacer(
-                    modifier = Modifier.height(3.dp)
-                )
-                SettingsSectionLabel(
-                    text = "VISIBILITY"
-                )
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "contrast",
-                        choices = listOf(
-                            "standard",
-                            "high",
-                            "maximum"
-                        ),
-                        selectedIndex =
-                            settings.readabilityContrast.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    readabilityContrast =
-                                        ReadabilityContrast.entries[index]
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsToggleRow(
-                        label = "dim secondary text",
-                        enabled = settings.dimSecondaryText,
-                        onToggle = { enabled ->
-                            onSettingsChange(
-                                settings.copy(
-                                    dimSecondaryText = enabled
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            item {
-                Spacer(
-                    modifier = Modifier.height(3.dp)
-                )
-                SettingsSectionLabel(
-                    text = "MOTION"
-                )
-            }
-
-            item {
-                SettingsControlCard {
-                    SettingsChoiceRow(
-                        label = "motion",
-                        choices = listOf(
-                            "normal",
-                            "reduced"
-                        ),
-                        selectedIndex =
-                            settings.readabilityMotion.ordinal,
-                        onSelected = { index ->
-                            onSettingsChange(
-                                settings.copy(
-                                    readabilityMotion =
-                                        ReadabilityMotion.entries[index]
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
-            item {
-            }
+            )
         }
+
+        SettingsSectionLabel(
+            text = "VISIBILITY"
+        )
+
+        SettingsCardGroup {
+            SettingsChoiceRow(
+                label = "Contrast",
+                choices = listOf(
+                    "Standard",
+                    "High",
+                    "Maximum"
+                ),
+                selectedIndex =
+                    settings.readabilityContrast.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            readabilityContrast =
+                                ReadabilityContrast.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsToggleRow(
+                label = "Dim secondary text",
+                enabled = settings.dimSecondaryText,
+                onToggle = { enabled ->
+                    onSettingsChange(
+                        settings.copy(
+                            dimSecondaryText = enabled
+                        )
+                    )
+                }
+            )
+        }
+
+        SettingsSectionLabel(
+            text = "MOTION"
+        )
+
+        SettingsControlCard {
+            SettingsChoiceRow(
+                label = "Motion",
+                choices = listOf(
+                    "Normal",
+                    "Reduced"
+                ),
+                selectedIndex =
+                    settings.readabilityMotion.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            readabilityMotion =
+                                ReadabilityMotion.entries[index]
+                        )
+                    )
+                }
+            )
+        }
+
+        Spacer(
+            modifier = Modifier.height(6.dp)
+        )
     }
 }
 
@@ -2644,45 +2366,324 @@ internal fun LauncherBackButton(
     )
 }
 
+/*
+ * DAYLIGHT SETTINGS KIT
+ *
+ * Every settings page is built from the blocks below, which render
+ * the Daylight style from C-Settings: a BackgroundBlack page, a small
+ * "Settings" caption over the big page title (right of the camera),
+ * SurfaceBlack cards with hairlines between related rows, bold row
+ * titles with an optional muted detail line, pill switches, and
+ * segmented controls or wrapping chips for multi-choice settings.
+ *
+ * Sizes follow the mockup: px x 0.82 = dp, px x 0.70 = sp.
+ */
+
+/*
+ * Gap between cards and labels on a page (12 px).
+ */
+internal val SettingsBlockGap = 10.dp
+
+/*
+ * Inner horizontal padding of a card (14 px) and the vertical padding
+ * of one row (11 px).
+ */
+internal val SettingsCardHorizontal = 11.5.dp
+internal val SettingsRowVertical = 9.dp
+internal val SettingsCardRadius = 14.dp
+
+/*
+ * The page header: "‹ Settings" caption over the page title. Tapping
+ * it goes back, as do the Back and Escape keys handled by the host.
+ */
 @Composable
 internal fun SettingsHeader(
     title: String,
     onBack: () -> Unit
 ) {
-    Row(
+    DaylightScreenTitle(
+        title = title,
+        caption = "‹ Settings",
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(start = CameraSafeStartPadding),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        LauncherBackButton(onBack = onBack)
-
-        Spacer(
-            modifier = Modifier.width(6.dp)
-        )
-
-        Text(
-            text = title,
-            color = PrimaryText,
-            fontSize = 14.sp,
-            fontFamily = InterfaceFont,
-            fontWeight = FontWeight.Medium
-        )
-    }
+                .clickable {
+                    onBack()
+                }
+    )
 }
 
 @Composable
 internal fun SettingsSectionLabel(
     text: String
 ) {
+    DaylightSectionLabel(
+        text = text,
+        modifier =
+            Modifier.padding(
+                start = 4.dp,
+                top = 2.dp
+            )
+    )
+}
+
+/*
+ * A section label inside a LazyColumn, carrying its own gaps because
+ * lazy settings pages do not use spacedBy (so grouped rows can touch).
+ */
+@Composable
+internal fun SettingsSectionHeader(
+    text: String,
+    first: Boolean = false
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        if (!first) {
+            Spacer(
+                modifier = Modifier.height(SettingsBlockGap)
+            )
+        }
+
+        SettingsSectionLabel(
+            text = text
+        )
+
+        Spacer(
+            modifier = Modifier.height(6.dp)
+        )
+    }
+}
+
+/*
+ * Small muted helper text under or between cards.
+ */
+@Composable
+internal fun SettingsFootnote(
+    text: String,
+    modifier: Modifier = Modifier
+) {
     Text(
         text = text,
-        color = TertiaryText,
-        fontSize = 6.5.sp,
+        color = SecondaryText,
+        fontSize = 8.sp,
+        lineHeight = 10.sp,
         fontFamily = InterfaceFont,
-        fontWeight = FontWeight.Bold
+        modifier = modifier.padding(horizontal = 4.dp)
     )
+}
+
+/*
+ * A white (dark grey in dark mode) card holding several rows; put a
+ * DaylightRowDivider between them.
+ */
+@Composable
+internal fun SettingsCardGroup(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    DaylightCard(
+        horizontalPadding = SettingsCardHorizontal,
+        content = content
+    )
+}
+
+@Composable
+internal fun SettingsControlCard(
+    content: @Composable () -> Unit
+) {
+    DaylightCard(
+        horizontalPadding = SettingsCardHorizontal
+    ) {
+        content()
+    }
+}
+
+/*
+ * One row of a card that is split across LazyColumn items (long app
+ * lists). The first and last rows round the card's corners; every
+ * row after the first starts with a hairline.
+ */
+@Composable
+internal fun SettingsGroupItem(
+    isFirst: Boolean,
+    isLast: Boolean,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val top =
+        if (isFirst) SettingsCardRadius else 0.dp
+
+    val bottom =
+        if (isLast) SettingsCardRadius else 0.dp
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    SurfaceBlack,
+                    RoundedCornerShape(
+                        topStart = top,
+                        topEnd = top,
+                        bottomEnd = bottom,
+                        bottomStart = bottom
+                    )
+                )
+                .padding(
+                    horizontal = SettingsCardHorizontal
+                )
+    ) {
+        if (!isFirst) {
+            DaylightRowDivider()
+        }
+
+        content()
+    }
+}
+
+@Composable
+private fun SettingsRowTitle(
+    text: String,
+    color: Color = PrimaryText
+) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = 10.5.sp,
+        lineHeight = 12.5.sp,
+        fontFamily = InterfaceFont,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+private fun SettingsRowDetail(
+    text: String
+) {
+    Text(
+        text = text,
+        color = SecondaryText,
+        fontSize = 8.5.sp,
+        lineHeight = 10.5.sp,
+        fontFamily = InterfaceFont,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+/*
+ * The Daylight settings row: bold title, optional muted detail, and
+ * whatever control sits on the right. Clickable rows are focusable,
+ * so the hardware keyboard can move through them.
+ */
+@Composable
+internal fun SettingsRow(
+    title: String,
+    detail: String? = null,
+    onClick: (() -> Unit)? = null,
+    titleColor: Color = PrimaryText,
+    trailing: @Composable () -> Unit = {}
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 40.dp)
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable { onClick() }
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(vertical = SettingsRowVertical),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            SettingsRowTitle(
+                text = title,
+                color = titleColor
+            )
+
+            if (!detail.isNullOrBlank()) {
+                SettingsRowDetail(
+                    text = detail
+                )
+            }
+        }
+
+        Spacer(
+            modifier = Modifier.width(10.dp)
+        )
+
+        trailing()
+    }
+}
+
+/*
+ * The thin ">" at the end of a row that opens another page.
+ */
+@Composable
+internal fun SettingsChevron() {
+    val color = SecondaryText
+
+    Canvas(
+        modifier = Modifier.size(13.dp)
+    ) {
+        val strokeWidth = 1.6.dp.toPx()
+
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.38f, size.height * 0.22f),
+            end = Offset(size.width * 0.66f, size.height * 0.5f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.66f, size.height * 0.5f),
+            end = Offset(size.width * 0.38f, size.height * 0.78f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+/*
+ * A round selection mark for pick-one lists ("Compose email in").
+ */
+@Composable
+internal fun SettingsRadioMark(
+    selected: Boolean
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(18.dp)
+                .border(
+                    1.5.dp,
+                    if (selected) AccentOrange else BorderGray,
+                    CircleShape
+                )
+                .padding(4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            AccentOrange,
+                            CircleShape
+                        )
+            )
+        }
+    }
 }
 
 @Composable
@@ -2692,277 +2693,139 @@ internal fun SettingsNavigationRow(
     subtitle: String,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .background(
-                    SurfaceBlack,
-                    RoundedCornerShape(9.dp)
-                )
-                .border(
-                    0.75.dp,
-                    BorderGray,
-                    RoundedCornerShape(9.dp)
-                )
-                .clickable {
-                    onClick()
-                }
-                .padding(
-                    horizontal = 9.dp
-                ),
-        verticalAlignment = Alignment.CenterVertically
+    SettingsRow(
+        title = title,
+        detail = subtitle,
+        onClick = onClick
     ) {
-        Text(
-            text = "•",
-            color = PrimaryText,
-            fontSize = 12.sp,
-            fontFamily = InterfaceFont,
-            modifier = Modifier.width(14.dp),
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(
-            modifier = Modifier.width(5.dp)
-        )
-
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = title,
-                color = PrimaryText,
-                fontSize = 9.5.sp,
-                lineHeight = 9.8.sp,
-                fontFamily = InterfaceFont,
-                fontWeight = FontWeight.Medium
-            )
-
-            Text(
-                text = subtitle,
-                color = TertiaryText,
-                fontSize = 6.5.sp,
-                lineHeight = 6.8.sp,
-                fontFamily = InterfaceFont
-            )
-        }
-
-        Text(
-            text = ">",
-            color = SecondaryText,
-            fontSize = 11.sp,
-            fontFamily = InterfaceFont
-        )
+        SettingsChevron()
     }
 }
 
-@Composable
-internal fun SettingsControlCard(
-    content: @Composable () -> Unit
-) {
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .background(
-                    SurfaceBlack,
-                    RoundedCornerShape(9.dp)
-                )
-                .border(
-                    0.75.dp,
-                    BorderGray,
-                    RoundedCornerShape(9.dp)
-                )
-                .padding(
-                    horizontal = 10.dp,
-                    vertical = 9.dp
-                )
-    ) {
-        content()
-    }
-}
-
+/*
+ * A pick-one setting. Up to three short options sit in a segmented
+ * control beside the title (like "Weather  °F | °C"); longer lists
+ * wrap as chips under the title.
+ */
 @Composable
 internal fun SettingsChoiceRow(
     label: String,
     choices: List<String>,
     selectedIndex: Int,
-    onSelected: (Int) -> Unit
+    onSelected: (Int) -> Unit,
+    detail: String? = null
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            color = PrimaryText,
-            fontSize = 9.5.sp,
-            fontFamily = InterfaceFont,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f)
-        )
+    val fitsSegmented =
+        choices.size <= 3 &&
+                choices.all { it.length <= 9 } &&
+                choices.sumOf { it.length } <= 22
 
-        choices.forEachIndexed { index, choice ->
-            val selected =
-                index == selectedIndex
-
-            Text(
-                text = choice,
-                color =
-                    if (selected) {
-                        if (settingsChoiceTextNeedsDarkAccent()) BackgroundBlack else PrimaryText
-                    } else {
-                        SecondaryText
-                    },
-                fontSize = 7.5.sp,
-                lineHeight = 7.5.sp,
-                fontFamily = InterfaceFont,
-                textAlign = TextAlign.Center,
-                modifier =
-                    Modifier
-                        .background(
-                            if (selected) AccentOrange else Color.Transparent,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .border(
-                            0.75.dp,
-                            if (selected) AccentOrange else BorderGray,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable {
-                            onSelected(index)
-                        }
-                        .padding(
-                            horizontal = 7.dp,
-                            vertical = 4.dp
-                        )
+    if (fitsSegmented) {
+        SettingsRow(
+            title = label,
+            detail = detail
+        ) {
+            DaylightSegmented(
+                options = choices,
+                selectedIndex = selectedIndex,
+                onSelect = onSelected
             )
-
-            if (index != choices.lastIndex) {
-                Spacer(
-                    modifier = Modifier.width(4.dp)
-                )
-            }
         }
+    } else {
+        SettingsChoiceWrapRow(
+            label = label,
+            choices = choices,
+            selectedIndex = selectedIndex,
+            onSelected = onSelected,
+            detail = detail
+        )
     }
 }
 
+/*
+ * A pick-one setting with many options: the title, then the options
+ * as wrapping Daylight chips. perRow is kept for older callers; the
+ * chips now flow to fit the width.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SettingsChoiceWrapRow(
     label: String,
     choices: List<String>,
     selectedIndex: Int,
     onSelected: (Int) -> Unit,
-    perRow: Int = 3
+    perRow: Int = 3,
+    detail: String? = null
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth()
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = SettingsRowVertical)
     ) {
-        Text(
-            text = label,
-            color = PrimaryText,
-            fontSize = 9.5.sp,
-            fontFamily = InterfaceFont,
-            fontWeight = FontWeight.Medium
+        SettingsRowTitle(
+            text = label
         )
+
+        if (!detail.isNullOrBlank()) {
+            SettingsRowDetail(
+                text = detail
+            )
+        }
 
         Spacer(
-            modifier = Modifier.height(5.dp)
+            modifier = Modifier.height(7.dp)
         )
 
-        choices
-            .withIndex()
-            .chunked(perRow)
-            .forEachIndexed { rowIndex, rowChoices ->
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    /*
-                     * Every chip takes an equal share of the row and a
-                     * fixed height, so rows line up with each other no
-                     * matter how long the individual labels are.
-                     */
-                    rowChoices.forEach { indexedChoice ->
-
-                        val index =
-                            indexedChoice.index
-
-                        val selected =
-                            index == selectedIndex
-
-                        Box(
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .height(26.dp)
-                                    .background(
-                                        if (selected) AccentOrange else Color.Transparent,
-                                        RoundedCornerShape(8.dp)
-                                    )
-                                    .border(
-                                        0.75.dp,
-                                        if (selected) AccentOrange else BorderGray,
-                                        RoundedCornerShape(8.dp)
-                                    )
-                                    .clickable {
-                                        onSelected(index)
-                                    },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            /*
-                             * Explicit lineHeight and centred
-                             * textAlign: without them the label is
-                             * centred by its line box, and Poppins
-                             * reports more descent than ascent, so it
-                             * sat low in the chip.
-                             */
-                            Text(
-                                text = indexedChoice.value,
-                                color =
-                                    if (selected) {
-                                        if (settingsChoiceTextNeedsDarkAccent()) BackgroundBlack else PrimaryText
-                                    } else {
-                                        SecondaryText
-                                    },
-                                fontSize = 7.5.sp,
-                                lineHeight = 7.5.sp,
-                                fontFamily = InterfaceFont,
-                                textAlign = TextAlign.Center,
-                                maxLines = 1
-                            )
-                        }
-
-                        Spacer(
-                            modifier = Modifier.width(4.dp)
-                        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement =
+                Arrangement.spacedBy(5.dp),
+            verticalArrangement =
+                Arrangement.spacedBy(5.dp)
+        ) {
+            choices.forEachIndexed { index, choice ->
+                DaylightChoiceChip(
+                    label = choice,
+                    selected = index == selectedIndex,
+                    onClick = {
+                        onSelected(index)
                     }
-
-                    /*
-                     * Pads a short final row so its chips keep the same
-                     * width as the rows above.
-                     */
-                    repeat(
-                        perRow - rowChoices.size
-                    ) {
-                        Spacer(
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        Spacer(
-                            modifier = Modifier.width(4.dp)
-                        )
-                    }
-                }
-
-                if (rowIndex != (choices.size - 1) / perRow) {
-                    Spacer(
-                        modifier = Modifier.height(4.dp)
-                    )
-                }
+                )
             }
+        }
+    }
+}
+
+/*
+ * Several independent on/off options shown as chips under a row
+ * (the search picker's Chrome / Claude / Apps).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun SettingsChipToggles(
+    options: List<Pair<String, Boolean>>,
+    onToggle: (index: Int, enabled: Boolean) -> Unit
+) {
+    FlowRow(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = SettingsRowVertical),
+        horizontalArrangement =
+            Arrangement.spacedBy(5.dp),
+        verticalArrangement =
+            Arrangement.spacedBy(5.dp)
+    ) {
+        options.forEachIndexed { index, (label, enabled) ->
+            DaylightChoiceChip(
+                label = label,
+                selected = enabled,
+                onClick = {
+                    onToggle(index, !enabled)
+                }
+            )
+        }
     }
 }
 
@@ -2970,51 +2833,19 @@ internal fun SettingsChoiceWrapRow(
 internal fun SettingsToggleRow(
     label: String,
     enabled: Boolean,
-    onToggle: (Boolean) -> Unit
+    onToggle: (Boolean) -> Unit,
+    detail: String? = null
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+    SettingsRow(
+        title = label,
+        detail = detail,
+        onClick = {
+            onToggle(!enabled)
+        }
     ) {
-        Text(
-            text = label,
-            color = PrimaryText,
-            fontSize = 9.5.sp,
-            fontFamily = InterfaceFont,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f)
-        )
-
-        Text(
-            text = if (enabled) "on" else "off",
-            color =
-                if (enabled && settingsChoiceTextNeedsDarkAccent()) {
-                    BackgroundBlack
-                } else if (enabled) {
-                    PrimaryText
-                } else {
-                    SecondaryText
-                },
-            fontSize = 7.5.sp,
-            fontFamily = InterfaceFont,
-            modifier =
-                Modifier
-                    .background(
-                        if (enabled) AccentOrange else Color.Transparent,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .border(
-                        0.75.dp,
-                        if (enabled) AccentOrange else BorderGray,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .clickable {
-                        onToggle(!enabled)
-                    }
-                    .padding(
-                        horizontal = 10.dp,
-                        vertical = 4.dp
-                    )
+        DaylightSwitch(
+            checked = enabled,
+            onCheckedChange = onToggle
         )
     }
 }
@@ -3026,98 +2857,129 @@ internal fun SettingsAppToggleRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit
 ) {
-    Row(
+    SettingsRow(
+        title = appName,
+        detail = packageName,
+        onClick = {
+            onToggle(!enabled)
+        }
+    ) {
+        DaylightSwitch(
+            checked = enabled,
+            onCheckedChange = onToggle
+        )
+    }
+}
+
+/*
+ * "Appearance  Light | Dark | Auto". Auto follows the phone's dark
+ * mode; Light and Dark pin Daylight light or dark. While one of the
+ * other themes (navy, slate...) is in use none of the three is lit;
+ * the full list lives on the Appearance page.
+ */
+@Composable
+internal fun SettingsAppearanceRow(
+    settings: LauncherSettings,
+    onSettingsChange: (LauncherSettings) -> Unit
+) {
+    SettingsRow(
+        title = "Appearance",
+        detail = "Auto follows your phone's dark mode"
+    ) {
+        DaylightSegmented(
+            options = listOf("Light", "Dark", "Auto"),
+            selectedIndex =
+                when {
+                    settings.followSystemTheme -> 2
+                    settings.themeMode == LauncherThemeMode.LIGHT -> 0
+                    settings.themeMode == LauncherThemeMode.DARK -> 1
+                    else -> -1
+                },
+            onSelect = { index ->
+                onSettingsChange(
+                    when (index) {
+                        0 ->
+                            settings.copy(
+                                followSystemTheme = false,
+                                themeMode = LauncherThemeMode.LIGHT
+                            )
+
+                        1 ->
+                            settings.copy(
+                                followSystemTheme = false,
+                                themeMode = LauncherThemeMode.DARK
+                            )
+
+                        else ->
+                            settings.copy(
+                                followSystemTheme = true
+                            )
+                    }
+                )
+            }
+        )
+    }
+}
+
+/*
+ * "Accent" with a row of colour swatches; the picked one wears a ring.
+ */
+@Composable
+internal fun SettingsAccentRow(
+    settings: LauncherSettings,
+    onSettingsChange: (LauncherSettings) -> Unit
+) {
+    Column(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable {
-                    onToggle(
-                        !enabled
-                    )
-                },
-        verticalAlignment =
-            Alignment.CenterVertically
+                .padding(vertical = SettingsRowVertical)
     ) {
-        Column(
-            modifier =
-                Modifier.weight(
-                    1f
-                )
-        ) {
-            Text(
-                text = appName,
-                color = PrimaryText,
-                fontSize = 9.5.sp,
-                fontFamily = InterfaceFont,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1
-            )
-
-            Text(
-                text = packageName,
-                color = TertiaryText,
-                fontSize = 6.sp,
-                fontFamily = InterfaceFont,
-                maxLines = 1
-            )
-        }
+        SettingsRowTitle(
+            text = "Accent"
+        )
 
         Spacer(
-            modifier = Modifier.width(
-                8.dp
-            )
+            modifier = Modifier.height(7.dp)
         )
 
-        Text(
-            text =
-                if (enabled) {
-                    "on"
-                } else {
-                    "off"
-                },
-            color =
-                if (
-                    enabled &&
-                    settingsChoiceTextNeedsDarkAccent()
-                ) {
-                    BackgroundBlack
-                } else if (
-                    enabled
-                ) {
-                    PrimaryText
-                } else {
-                    SecondaryText
-                },
-            fontSize = 7.5.sp,
-            fontFamily = InterfaceFont,
-            modifier =
-                Modifier
-                    .background(
-                        if (enabled) {
-                            AccentOrange
-                        } else {
-                            Color.Transparent
-                        },
-                        RoundedCornerShape(
-                            8.dp
-                        )
-                    )
-                    .border(
-                        0.75.dp,
-                        if (enabled) {
-                            AccentOrange
-                        } else {
-                            BorderGray
-                        },
-                        RoundedCornerShape(
-                            8.dp
-                        )
-                    )
-                    .padding(
-                        horizontal = 10.dp,
-                        vertical = 4.dp
-                    )
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LauncherAccent.entries.forEach { accent ->
+                val selected =
+                    settings.accent == accent
+
+                val swatch =
+                    accentColorFor(accent)
+
+                Box(
+                    modifier =
+                        Modifier
+                            .size(24.dp)
+                            .border(
+                                width = 1.5.dp,
+                                color = if (selected) swatch else Color.Transparent,
+                                shape = CircleShape
+                            )
+                            .clip(CircleShape)
+                            .clickable {
+                                onSettingsChange(
+                                    settings.copy(
+                                        accent = accent
+                                    )
+                                )
+                            }
+                            .padding(3.5.dp)
+                            .background(
+                                swatch,
+                                CircleShape
+                            )
+                )
+            }
+        }
     }
 }
 
