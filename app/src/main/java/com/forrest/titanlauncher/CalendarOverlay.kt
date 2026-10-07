@@ -392,7 +392,7 @@ internal fun CalendarSetupOverlayCard(
         Spacer(Modifier.height(12.dp))
 
         DaylightSegmented(
-            options = listOf("Phone calendars", "Google account"),
+            options = listOf("Phone", "Google"),
             selectedIndex = if (usesGoogle) 1 else 0,
             onSelect = { index ->
                 onChooseSource(index == 1)
@@ -431,6 +431,11 @@ internal fun CalendarSetupOverlayCard(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
+                                /*
+                                 * Scrolls with very large text sizes
+                                 * instead of cutting the hint off.
+                                 */
+                                .verticalScroll(rememberScrollState())
                                 .padding(vertical = 18.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {

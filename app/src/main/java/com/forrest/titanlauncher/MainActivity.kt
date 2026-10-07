@@ -1728,6 +1728,15 @@ fun TitanApp(
         mutableStateOf(false)
     }
 
+    /*
+     * True from the moment calendar setup is asked for until it's
+     * closed or saved. A Google answer that arrives after Close must
+     * not bring the card back.
+     */
+    var calendarSetupWanted by remember {
+        mutableStateOf(false)
+    }
+
     var pendingPhoneCalendarDraft by remember {
         mutableStateOf<CalendarEventDraft?>(null)
     }
@@ -2123,6 +2132,9 @@ fun TitanApp(
      * Opens calendar setup on the phone's own calendars.
      */
     fun openPhoneCalendarSetup() {
+
+        calendarSetupWanted =
+            true
 
         calendarSetupUsesGoogle =
             false
@@ -2549,6 +2561,21 @@ fun TitanApp(
                     .loadWritableCalendars(
                         accessToken
                     )
+
+            /*
+             * Closed while Google was answering: stay closed.
+             */
+            if (
+                !calendarSetupWanted
+            ) {
+                calendarSetupLoading =
+                    false
+
+                statusText =
+                    ""
+
+                return@launch
+            }
 
             if (
                 result.success
@@ -3642,6 +3669,9 @@ fun TitanApp(
             },
             onCalendarSetup = {
 
+                calendarSetupWanted =
+                    true
+
                 if (
                     calendarSelectionStore.usesGoogle()
                 ) {
@@ -3662,6 +3692,9 @@ fun TitanApp(
                 calendarSetupLoading,
             onCalendarSetupSource = { google ->
 
+                calendarSetupWanted =
+                    true
+
                 if (google) {
                     calendarSetupUsesGoogle =
                         true
@@ -3680,8 +3713,29 @@ fun TitanApp(
                     openPhoneCalendarSetup()
                 }
             },
+            /*
+             * Draw the calendar card once, in the layer the user can
+             * see. While Settings, Hub, Notes, Mail or Messages is
+             * open, home is off screen and the command layer on top
+             * draws it; a second copy on the hidden home would hold
+             * focus and keys (Enter, Esc) away from the visible one.
+             */
             showCalendarSetup =
-                showCalendarSetup,
+                showCalendarSetup &&
+                        (
+                                commandOverlayOnly ||
+                                        !(
+                                                currentConversation != null ||
+                                                        currentNote != null ||
+                                                        mailComposeDraft != null ||
+                                                        currentMailMessage != null ||
+                                                        showMailInbox ||
+                                                        showMessagesInbox ||
+                                                        showNotes ||
+                                                        showHub ||
+                                                        showSettings
+                                                )
+                                ),
             calendarSetupOptions =
                 calendarSetupOptions,
             currentCalendarId =
@@ -3750,6 +3804,9 @@ fun TitanApp(
                             familyCalendar.summary
                     )
 
+                calendarSetupWanted =
+                    false
+
                 showCalendarSetup =
                     false
 
@@ -3759,6 +3816,19 @@ fun TitanApp(
                     "✓ EVENT CALENDAR SAVED"
             },
             onDismissCalendarSetup = {
+
+                calendarSetupWanted =
+                    false
+
+                pendingPhoneCalendarSetup =
+                    false
+
+                if (
+                    pendingGoogleAction == GoogleCalendarAction.LOAD_SETUP
+                ) {
+                    pendingGoogleAction =
+                        null
+                }
 
                 showCalendarSetup =
                     false
@@ -4185,12 +4255,12 @@ fun TitanApp(
 
                             true
                         } else if (
-                            /*
-                             * Backspace on an empty prompt closes it
-                             * too. Checked on key down, before the
-                             * field sees it, so the press that deletes
-                             * the last letter doesn't also close.
-                             */
+                        /*
+                         * Backspace on an empty prompt closes it
+                         * too. Checked on key down, before the
+                         * field sees it, so the press that deletes
+                         * the last letter doesn't also close.
+                         */
                             event.key == Key.Backspace &&
                             event.type == KeyEventType.KeyDown &&
                             !assistPromptActive
@@ -5771,16 +5841,16 @@ fun TitanApp(
                                                 } else {
 
 
-                                                launcherSettingsPage =
-                                                    LauncherSettingsPage.CALENDARS
+                                                    launcherSettingsPage =
+                                                        LauncherSettingsPage.CALENDARS
 
-                                                calendarVisibilityLoading =
-                                                    true
+                                                    calendarVisibilityLoading =
+                                                        true
 
-                                                requestGoogleAuthorization(
-                                                    action =
-                                                        GoogleCalendarAction.LOAD_VISIBILITY
-                                                )
+                                                    requestGoogleAuthorization(
+                                                        action =
+                                                            GoogleCalendarAction.LOAD_VISIBILITY
+                                                    )
                                                 }
                                             },
                                             onProductivityBar = {
@@ -5958,16 +6028,16 @@ fun TitanApp(
                                         } else {
 
 
-                                        launcherSettingsPage =
-                                            LauncherSettingsPage.CALENDARS
+                                            launcherSettingsPage =
+                                                LauncherSettingsPage.CALENDARS
 
-                                        calendarVisibilityLoading =
-                                            true
+                                            calendarVisibilityLoading =
+                                                true
 
-                                        requestGoogleAuthorization(
-                                            action =
-                                                GoogleCalendarAction.LOAD_VISIBILITY
-                                        )
+                                            requestGoogleAuthorization(
+                                                action =
+                                                    GoogleCalendarAction.LOAD_VISIBILITY
+                                            )
                                         }
                                     },
                                     onProductivityBar = {

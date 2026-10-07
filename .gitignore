@@ -31,3 +31,4 @@ google-services.json
 
 # Build output kept out of iCloud (see build.gradle.kts)
 build.nosync
+app/release/
