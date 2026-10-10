@@ -990,7 +990,6 @@ private fun PromptLauncherOnboarding(
             step
         ) {
             0 -> "Skip setup"
-            1 -> "Everything stays on your phone"
             ONBOARDING_LAST_STEP -> null
             else -> "Skip"
         }

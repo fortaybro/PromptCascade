@@ -679,65 +679,119 @@ internal fun SettingsMainScreen(
             title = "Settings"
         )
 
+        /*
+         * Grouped by what people look for: the prompt and home screen
+         * first, then how it looks, then the apps and accounts it
+         * connects to. Things set up by typing a command are listed
+         * with that command, so nothing is hidden.
+         */
         SettingsSectionLabel(
-            text = "DEVICE"
+            text = "PROMPT & HOME"
         )
 
         SettingsCardGroup {
             SettingsNavigationRow(
-                symbol = "◉",
-                title = "Appearance",
-                subtitle = "Light, dark, accent & font",
-                onClick = onAppearance
-            )
-
-            DaylightRowDivider()
-
-            SettingsNavigationRow(
                 symbol = "⌂",
-                title = "Home screen",
-                subtitle = "Pickers, weather, ring & cards",
+                title = "Prompt & home screen",
+                subtitle = "Keyboard, commands box, pickers, weather & cards",
                 onClick = onHomeScreen
             )
 
             DaylightRowDivider()
 
             SettingsNavigationRow(
+                symbol = "◔",
+                title = "24-hour ring",
+                subtitle = "Screen-time ring & distracting apps",
+                onClick = onProductivityBar
+            )
+        }
+
+        SettingsSectionLabel(
+            text = "LOOK"
+        )
+
+        SettingsCardGroup {
+            SettingsNavigationRow(
+                symbol = "◉",
+                title = "Appearance",
+                subtitle = "Theme, accent, font, buttons & surfaces",
+                onClick = onAppearance
+            )
+
+            DaylightRowDivider()
+
+            SettingsNavigationRow(
+                symbol = "Aa",
+                title = "Readability",
+                subtitle = "Text size, contrast & motion",
+                onClick = onReadability
+            )
+        }
+
+        SettingsSectionLabel(
+            text = "CALENDAR, MAIL & HUB"
+        )
+
+        SettingsCardGroup {
+            SettingsNavigationRow(
                 symbol = "•",
-                title = "Calendars",
-                subtitle = "Home & AI calendar visibility",
+                title = "Calendar",
+                subtitle = "Where new events go & what home shows",
                 onClick = onCalendars
             )
 
             DaylightRowDivider()
 
             SettingsNavigationRow(
-                symbol = "•••",
-                title = "Productivity bar",
-                subtitle = "24-hour ring & distracting apps",
-                onClick = onProductivityBar
-            )
-
-            DaylightRowDivider()
-
-            SettingsNavigationRow(
-                symbol = "•",
-                title = "Notifications",
-                subtitle = "Email apps & hub apps",
+                symbol = "@",
+                title = "Mail & hub",
+                subtitle = "Email apps, compose app & hub apps",
                 onClick = onNotifications
             )
         }
 
         SettingsSectionLabel(
-            text = "ACCESSIBILITY"
+            text = "SET UP BY TYPING IN THE PROMPT"
         )
 
         SettingsCardGroup {
-            SettingsNavigationRow(
-                symbol = "Aa",
-                title = "Readability",
-                subtitle = "Type size, contrast & motion",
-                onClick = onReadability
+            SettingsCommandRow(
+                title = "Calendar",
+                detail = "Phone or Google calendar",
+                command = "calendarsetup"
+            )
+
+            DaylightRowDivider()
+
+            SettingsCommandRow(
+                title = "Weather",
+                detail = "Location for the forecast",
+                command = "weathersetup"
+            )
+
+            DaylightRowDivider()
+
+            SettingsCommandRow(
+                title = "Assist",
+                detail = "Gemini key & what it may read",
+                command = "geminisetup"
+            )
+
+            DaylightRowDivider()
+
+            SettingsCommandRow(
+                title = "To-dos",
+                detail = "Google Tasks or Todoist",
+                command = "taskssetup"
+            )
+
+            DaylightRowDivider()
+
+            SettingsCommandRow(
+                title = "Screen time",
+                detail = "Usage access for the ring",
+                command = "usagesetup"
             )
         }
 
@@ -1068,6 +1122,104 @@ internal fun AppearanceSettingsScreen(
             )
         }
 
+        SettingsSectionLabel(
+            text = "SURFACES"
+        )
+
+        SettingsCardGroup {
+            SettingsChoiceRow(
+                label = "App buttons",
+                choices = listOf("Black", "Charcoal", "Gray"),
+                selectedIndex = settings.appButtonSurface.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            appButtonSurface = HomeSurfaceTone.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Info cards",
+                choices = listOf("Black", "Charcoal", "Gray"),
+                selectedIndex = settings.infoCardSurface.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            infoCardSurface = HomeSurfaceTone.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Prompt bar",
+                choices = listOf("Dark", "Medium", "Light"),
+                selectedIndex = settings.commandSurface.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            commandSurface = CommandSurfaceTone.entries[index]
+                        )
+                    )
+                }
+            )
+        }
+
+        SettingsSectionLabel(
+            text = "BUTTONS"
+        )
+
+        SettingsCardGroup {
+            SettingsChoiceRow(
+                label = "Icon size",
+                choices = listOf("Small", "Normal", "Large"),
+                selectedIndex = settings.buttonIconSize.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            buttonIconSize = HomeElementSize.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Label size",
+                choices = listOf("Small", "Normal", "Large"),
+                selectedIndex = settings.buttonLabelSize.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            buttonLabelSize = HomeElementSize.entries[index]
+                        )
+                    )
+                }
+            )
+
+            DaylightRowDivider()
+
+            SettingsChoiceRow(
+                label = "Corners",
+                choices = listOf("Square", "Soft", "Round"),
+                selectedIndex = settings.buttonCorners.ordinal,
+                onSelected = { index ->
+                    onSettingsChange(
+                        settings.copy(
+                            buttonCorners = HomeCornerStyle.entries[index]
+                        )
+                    )
+                }
+            )
+        }
+
         /*
          * A weighted spacer would demand infinite height inside a
          * scrolling column. A fixed tail keeps the last card clear of
@@ -1286,7 +1438,7 @@ internal fun NotificationSettingsScreen(
             )
     ) {
         SettingsHeader(
-            title = "Notifications",
+            title = "Mail & hub",
             onBack = onBack
         )
 
@@ -1510,7 +1662,7 @@ internal fun CalendarVisibilitySettingsScreen(
 
         SettingsHeader(
             title =
-                "Calendars",
+                "Calendar",
             onBack =
                 onBack
         )
@@ -1754,18 +1906,50 @@ internal fun HomeScreenSettingsScreen(
             Arrangement.spacedBy(SettingsBlockGap)
     ) {
         SettingsHeader(
-            title = "Home screen",
+            title = "Prompt & home screen",
             onBack = onBack
         )
 
-        SettingsControlCard {
-            SettingsAppearanceRow(
-                settings = settings,
-                onSettingsChange = onSettingsChange
-            )
-        }
+        SettingsSectionLabel(
+            text = "PROMPT"
+        )
 
         SettingsCardGroup {
+
+            /*
+             * Lets Android's keyboard app in (on-screen keyboard,
+             * voice, other languages). Restarts the screen so every
+             * text field picks it up. See PromptKeyboard.kt.
+             */
+            val keyboardContext =
+                LocalContext.current
+
+            var useKeyboardApp by remember {
+                mutableStateOf(
+                    KeyboardPrefs.useInputMethod(keyboardContext)
+                )
+            }
+
+            SettingsToggleRow(
+                label = "On-screen keyboard",
+                detail = "Use your keyboard app: on-screen keys, voice, other languages · off types with the physical keyboard only",
+                enabled = useKeyboardApp,
+                onToggle = { enabled ->
+                    KeyboardPrefs.setUseInputMethod(
+                        keyboardContext,
+                        enabled
+                    )
+
+                    useKeyboardApp =
+                        enabled
+
+                    keyboardContext
+                        .findHostActivity()
+                        ?.recreate()
+                }
+            )
+
+            DaylightRowDivider()
 
             /*
              * The command legend above the prompt. When on, it can
@@ -1878,7 +2062,13 @@ internal fun HomeScreenSettingsScreen(
                 )
             }
 
-            DaylightRowDivider()
+        }
+
+        SettingsSectionLabel(
+            text = "HOME SCREEN"
+        )
+
+        SettingsCardGroup {
 
             /*
              * Off hides the weather; °F / °C show it in that unit.
@@ -1904,26 +2094,12 @@ internal fun HomeScreenSettingsScreen(
                 }
             )
 
-            DaylightRowDivider()
-
-            SettingsToggleRow(
-                label = "24-hour ring",
-                detail = "Flags hours with 20+ min on distracting apps",
-                enabled = settings.showProductivityDots,
-                onToggle = { enabled ->
-                    onSettingsChange(
-                        settings.copy(
-                            showProductivityDots = enabled
-                        )
-                    )
-                }
-            )
 
             DaylightRowDivider()
 
             SettingsToggleRow(
-                label = "Calendar card",
-                detail = "Your next event on the home screen",
+                label = "Next event",
+                detail = "Your next calendar event on the home card",
                 enabled = settings.showCalendarCard,
                 onToggle = { enabled ->
                     onSettingsChange(
@@ -1937,117 +2113,13 @@ internal fun HomeScreenSettingsScreen(
             DaylightRowDivider()
 
             SettingsToggleRow(
-                label = "Attention card",
+                label = "Texts & mail",
+                detail = "New texts and mail on the home card",
                 enabled = settings.showAttentionCard,
                 onToggle = { enabled ->
                     onSettingsChange(
                         settings.copy(
                             showAttentionCard = enabled
-                        )
-                    )
-                }
-            )
-        }
-
-        SettingsControlCard {
-            SettingsAccentRow(
-                settings = settings,
-                onSettingsChange = onSettingsChange
-            )
-        }
-
-        SettingsSectionLabel(
-            text = "SURFACES"
-        )
-
-        SettingsCardGroup {
-            SettingsChoiceRow(
-                label = "App buttons",
-                choices = listOf("Black", "Charcoal", "Gray"),
-                selectedIndex = settings.appButtonSurface.ordinal,
-                onSelected = { index ->
-                    onSettingsChange(
-                        settings.copy(
-                            appButtonSurface = HomeSurfaceTone.entries[index]
-                        )
-                    )
-                }
-            )
-
-            DaylightRowDivider()
-
-            SettingsChoiceRow(
-                label = "Info cards",
-                choices = listOf("Black", "Charcoal", "Gray"),
-                selectedIndex = settings.infoCardSurface.ordinal,
-                onSelected = { index ->
-                    onSettingsChange(
-                        settings.copy(
-                            infoCardSurface = HomeSurfaceTone.entries[index]
-                        )
-                    )
-                }
-            )
-
-            DaylightRowDivider()
-
-            SettingsChoiceRow(
-                label = "Command box",
-                choices = listOf("Dark", "Medium", "Light"),
-                selectedIndex = settings.commandSurface.ordinal,
-                onSelected = { index ->
-                    onSettingsChange(
-                        settings.copy(
-                            commandSurface = CommandSurfaceTone.entries[index]
-                        )
-                    )
-                }
-            )
-        }
-
-        SettingsSectionLabel(
-            text = "BUTTONS"
-        )
-
-        SettingsCardGroup {
-            SettingsChoiceRow(
-                label = "Icon size",
-                choices = listOf("Small", "Normal", "Large"),
-                selectedIndex = settings.buttonIconSize.ordinal,
-                onSelected = { index ->
-                    onSettingsChange(
-                        settings.copy(
-                            buttonIconSize = HomeElementSize.entries[index]
-                        )
-                    )
-                }
-            )
-
-            DaylightRowDivider()
-
-            SettingsChoiceRow(
-                label = "Label size",
-                choices = listOf("Small", "Normal", "Large"),
-                selectedIndex = settings.buttonLabelSize.ordinal,
-                onSelected = { index ->
-                    onSettingsChange(
-                        settings.copy(
-                            buttonLabelSize = HomeElementSize.entries[index]
-                        )
-                    )
-                }
-            )
-
-            DaylightRowDivider()
-
-            SettingsChoiceRow(
-                label = "Corners",
-                choices = listOf("Square", "Soft", "Round"),
-                selectedIndex = settings.buttonCorners.ordinal,
-                onSelected = { index ->
-                    onSettingsChange(
-                        settings.copy(
-                            buttonCorners = HomeCornerStyle.entries[index]
                         )
                     )
                 }
@@ -2091,7 +2163,7 @@ internal fun ProductivityBarSettingsScreen(
                 )
     ) {
         SettingsHeader(
-            title = "Productivity bar",
+            title = "24-hour ring",
             onBack = onBack
         )
 
@@ -2683,6 +2755,31 @@ internal fun SettingsRadioMark(
                         )
             )
         }
+    }
+}
+
+/*
+ * A setting that lives behind a prompt command: what it is, and the
+ * command to type, shown in the accent colour.
+ */
+@Composable
+internal fun SettingsCommandRow(
+    title: String,
+    detail: String,
+    command: String
+) {
+    SettingsRow(
+        title = title,
+        detail = detail
+    ) {
+        Text(
+            text = command,
+            color = AccentOrange,
+            fontSize = 9.5.sp,
+            fontFamily = InterfaceFont,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
     }
 }
 

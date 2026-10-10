@@ -1,5 +1,11 @@
 package com.forrest.titanlauncher
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -153,7 +159,14 @@ internal fun DaylightClockRing(
                 .trim()
                 .split(" ")
 
+        /*
+         * Kept inside the ring: with the dots showing, the time and
+         * weather may only use the middle of the circle, so a long
+         * forecast ("86° · mostly sunny") never runs into the dots.
+         */
         Column(
+            modifier =
+                if (showDots) Modifier.fillMaxWidth(0.66f) else Modifier,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
@@ -170,14 +183,52 @@ internal fun DaylightClockRing(
             if (
                 subtitle != null
             ) {
-                Text(
-                    text = subtitle,
-                    color = SecondaryText,
-                    fontFamily = InterfaceFont,
-                    fontSize = 9.sp,
-                    lineHeight = 11.sp,
-                    maxLines = 1
-                )
+                /*
+                 * Home passes "86° · mostly sunny": show the degrees
+                 * and a weather picture instead of the words. Any
+                 * other subtitle is shown as text, trimmed to fit.
+                 */
+                val temperature =
+                    subtitle.substringBefore(" · ", "")
+
+                val condition =
+                    subtitle.substringAfter(" · ", "")
+
+                if (
+                    temperature.isNotBlank() &&
+                    condition.isNotBlank()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(
+                            text = temperature,
+                            color = SecondaryText,
+                            fontFamily = InterfaceFont,
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            maxLines = 1
+                        )
+
+                        WeatherIcon(
+                            kind = weatherIconFor(condition),
+                            size = 14.dp
+                        )
+                    }
+                } else {
+                    Text(
+                        text = subtitle,
+                        color = SecondaryText,
+                        fontFamily = InterfaceFont,
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center
+                    )
+                }
             } else if (
                 parts.size > 1
             ) {

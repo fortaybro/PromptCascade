@@ -1,5 +1,8 @@
 package com.forrest.titanlauncher
 
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -98,16 +101,29 @@ internal fun DaylightOnboardingHeader(
             color = SecondaryText,
             fontSize = 8.5.sp,
             lineHeight = 11.sp,
-            fontFamily = InterfaceFont
+            fontFamily = InterfaceFont,
+            maxLines = 1,
+            softWrap = false
         )
 
         if (trailing != null) {
+
+            Spacer(Modifier.width(10.dp))
+
+            /*
+             * Always one line: longer notes ("Everything stays on
+             * your phone") get a slightly smaller size instead of
+             * wrapping under the step label.
+             */
             Text(
                 text = trailing,
                 color = SecondaryText,
-                fontSize = 8.5.sp,
+                fontSize = if (trailing.length > 14) 7.5.sp else 8.5.sp,
                 lineHeight = 11.sp,
                 fontFamily = InterfaceFont,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
                 fontWeight =
                     if (onTrailingClick != null) FontWeight.Medium else FontWeight.Normal,
                 modifier =

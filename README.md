@@ -2,11 +2,20 @@
 
 A keyboard-first Android home screen. Type what you want, press Enter, and it happens. Built for phones with a physical keyboard, developed on the Unihertz Titan 2 Elite.
 
-> **Status:** 2.1. Sideloaded release (not on Google Play). Expect rough edges and please report them with the `bug` command.
+> **Status:** 2.1.2. Sideloaded release (not on Google Play). Expect rough edges and please report them with the `bug` command.
+
+## What's new in 2.1.2
+
+- **On-screen keyboard:** Settings → Prompt & home screen → On-screen keyboard. Turn it on to use your keyboard app in Prompt: on-screen keys, voice typing, and languages typed through a keyboard app (Chinese, Japanese, Korean...). It's off by default on phones with a physical keyboard, so the Titan types as before.
+- **Settings, reorganized:** Prompt & home screen, 24-hour ring, Appearance, Readability, Calendar, and Mail & hub, plus a list of what's set up by typing a command.
+- **Weather as a picture:** under the time, the temperature now sits next to a small weather icon (sun, cloud, rain, snow, storm, fog, moon at night), so it always fits inside the ring.
+- **A size smaller:** the old Small text and button size is the new Normal. Pick a bigger size in Readability or Appearance if you prefer.
+- **Poppins** is the default font for new installs.
+- The calendar setup card can always be closed (2.1.1).
 
 ## What's new in 2.1
 
-- **Calendar without Google:** Prompt now uses the calendars already on your phone (Samsung, Outlook, Proton, local, or a synced Google account). No sign-in needed. A direct Google Calendar connection is still there in `calendarsetup` if you want it.
+- **Calendar without Google:** Prompt now uses the calendars already on your phone (Samsung, Outlook/Exchange, local, a synced Google account, or anything synced with DAVx⁵ or ICSx⁵). No sign-in needed. A direct Google Calendar connection is still there in `calendarsetup` if you want it.
 - **Calendar setup fixed:** the setup card can always be closed (Close, Back or Esc), even when no calendars are found. It's also smaller, so the camera no longer covers it.
 
 ## What's new in 2.0
@@ -53,9 +62,11 @@ Anything else is a search, sent to Chrome, Claude or your apps (pick with the ch
 
 Everything works without a Google account. Calendar uses your phone's own calendars, mail comes from your mail app's notifications, to-dos can go to Todoist, and the search chips can be switched off or set to Claude or Apps. Gmail, Google Calendar and Google Tasks connections are optional extras.
 
+For Gmail, Proton Mail or any other mail app, pick it in Settings → Mail & hub: new mail shows on home and in the hub, and opens in that app. Proton Calendar keeps events inside its own app, so to show them on home, add its share link to [ICSx⁵](https://icsx5.bitfire.at).
+
 ## Install
 
-Download the APK from [Releases](https://github.com/fortaybro/PromptLauncher/releases) and install it. It installs as an update over 1.x or 2.0. Then choose Prompt Launcher as your Home app.
+Download the APK from [Releases](https://github.com/fortaybro/PromptLauncher/releases) and install it. It installs as an update over any earlier version. Then choose Prompt Launcher as your Home app.
 
 Sideloaded apps may need **Allow restricted settings** (app info → ⋮) before Android lets you grant SMS or notification access.
 
@@ -65,7 +76,7 @@ All optional; each feature asks when you first use it.
 
 - **Contacts, SMS (send/read):** texting from the prompt, and quick reply's conversation history.
 - **Notification access:** the hub, quick reply and new-text alerts.
-- **Calendar:** your next event on home, and adding events with `:`. Uses the calendars already on your phone (Samsung, Outlook, Proton, local, or a synced Google account), so no Google sign-in is needed. You can switch to a direct Google Calendar connection with `calendarsetup`.
+- **Calendar:** your next event on home, and adding events with `:`. Uses the calendars already on your phone (Samsung, Outlook/Exchange, local, a synced Google account, or anything synced with DAVx⁵ or ICSx⁵), so no Google sign-in is needed. You can switch to a direct Google Calendar connection with `calendarsetup`.
 - **Usage access, location (coarse):** the 24-hour ring and weather.
 - **Phone / call log:** calls from the prompt and the hub.
 
@@ -87,6 +98,8 @@ Build output goes to `build.nosync` (so iCloud doesn't copy build files if the p
 ### Google sign-in (Gmail, Calendar, Tasks)
 
 Google sign-in only works for apps registered in a Google Cloud project. Add an **Android OAuth client** for `com.forrest.titanlauncher` with your signing key's SHA-1.
+
+In the released APK, signing in to Gmail or Google Calendar directly is limited to test users while the app waits for Google's review. Everyone else can use the Gmail app and phone calendars as described above.
 
 ## Credits
 
