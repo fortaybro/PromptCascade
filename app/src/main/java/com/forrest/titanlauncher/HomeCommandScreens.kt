@@ -11402,7 +11402,12 @@ internal fun CommandContextPanel(
                         index,
                         contact ->
 
-                    InlineContactRow(
+                    /*
+                     * Same rows as "@name": initials, name and
+                     * number, so people with two numbers can be told
+                     * apart.
+                     */
+                    DaylightContactRow(
                         contact =
                             contact,
                         selected =
@@ -11414,7 +11419,13 @@ internal fun CommandContextPanel(
                             onChooseGroupContact(
                                 contact
                             )
-                        }
+                        },
+                        sameAsSelected =
+                            groupMatches
+                                .getOrNull(
+                                    selectedGroupIndex
+                                )
+                                ?.name == contact.name
                     )
                 }
 
