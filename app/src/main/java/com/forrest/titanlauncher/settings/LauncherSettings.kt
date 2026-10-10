@@ -140,7 +140,7 @@ data class LauncherSettings(
     val secondaryTextColor: LauncherSecondaryTextColor =
         LauncherSecondaryTextColor.DEFAULT,
     val accent: LauncherAccent = LauncherAccent.COBALT,
-    val interfaceFont: LauncherInterfaceFont = LauncherInterfaceFont.BRICOLAGE,
+    val interfaceFont: LauncherInterfaceFont = LauncherInterfaceFont.POPPINS,
     val appButtonSurface: HomeSurfaceTone = HomeSurfaceTone.BLACK,
     val infoCardSurface: HomeSurfaceTone = HomeSurfaceTone.BLACK,
     val commandSurface: CommandSurfaceTone = CommandSurfaceTone.DARK,

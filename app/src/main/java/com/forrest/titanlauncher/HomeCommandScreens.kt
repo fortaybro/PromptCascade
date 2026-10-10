@@ -75,6 +75,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -140,6 +142,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
@@ -12027,6 +12030,24 @@ fun CommandBar(
                 },
                 singleLine =
                     true,
+                /*
+                 * The on-screen keyboard's Enter key (when the
+                 * keyboard app is allowed) works like the physical one.
+                 */
+                keyboardOptions =
+                    KeyboardOptions(
+                        imeAction = ImeAction.Go
+                    ),
+                keyboardActions =
+                    KeyboardActions(
+                        onGo = {
+                            if (hasInlineSuggestions) {
+                                onChooseInlineSuggestion()
+                            } else {
+                                onSubmit()
+                            }
+                        }
+                    ),
                 visualTransformation =
                     LauncherCommandVisualTransformation,
                 textStyle =

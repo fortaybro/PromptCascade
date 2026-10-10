@@ -477,7 +477,7 @@ internal val CameraSafeStartPadding =
 
 internal var ReadabilityFontScale by
 mutableFloatStateOf(
-    1f
+    0.90f
 )
 
 internal var ReadabilityFontWeightValue by
@@ -822,16 +822,17 @@ internal fun applyLauncherAppearance(
 
     HomeButtonIconSizeDp =
         when (settings.buttonIconSize) {
-            HomeElementSize.SMALL -> 18f
-            HomeElementSize.NORMAL -> 22f
-            HomeElementSize.LARGE -> 25f
+            /* 2.1.2: the old Small is the new Normal. */
+            HomeElementSize.SMALL -> 15f
+            HomeElementSize.NORMAL -> 18f
+            HomeElementSize.LARGE -> 22f
         }
 
     HomeButtonLabelSizeSp =
         when (settings.buttonLabelSize) {
-            HomeElementSize.SMALL -> 9.5f
-            HomeElementSize.NORMAL -> 10.5f
-            HomeElementSize.LARGE -> 11.5f
+            HomeElementSize.SMALL -> 8.5f
+            HomeElementSize.NORMAL -> 9.5f
+            HomeElementSize.LARGE -> 10.5f
         }
 
     HomeButtonCornerRadiusDp =
@@ -859,10 +860,14 @@ internal fun applyLauncherAppearance(
 
     ReadabilityFontScale =
         when (settings.readabilityTextSize) {
-            ReadabilityTextSize.SMALL -> 0.90f
-            ReadabilityTextSize.NORMAL -> 1f
-            ReadabilityTextSize.LARGE -> 1.08f
-            ReadabilityTextSize.EXTRA_LARGE -> 1.16f
+            /*
+             * 2.1.2: the old Small is the new Normal, and the
+             * other sizes moved down the same 10%.
+             */
+            ReadabilityTextSize.SMALL -> 0.81f
+            ReadabilityTextSize.NORMAL -> 0.90f
+            ReadabilityTextSize.LARGE -> 0.97f
+            ReadabilityTextSize.EXTRA_LARGE -> 1.04f
         }
 
     ReadabilityFontWeightValue =
@@ -1140,11 +1145,11 @@ class MainActivity :
                                         ReadabilityFontWeightValue
                                 )
                         ) {
-                            InterceptPlatformTextInput(
-                                interceptor = { _, _ ->
-                                    awaitCancellation()
-                                }
-                            ) {
+                            /*
+                             * Keyboard app allowed or not: see
+                             * PromptKeyboard.kt.
+                             */
+                            PromptTextInput {
                                 TitanApp(
                                     homeRequestVersion = homeRequestVersion
                                 )
@@ -4255,12 +4260,12 @@ fun TitanApp(
 
                             true
                         } else if (
-                        /*
-                         * Backspace on an empty prompt closes it
-                         * too. Checked on key down, before the
-                         * field sees it, so the press that deletes
-                         * the last letter doesn't also close.
-                         */
+                            /*
+                             * Backspace on an empty prompt closes it
+                             * too. Checked on key down, before the
+                             * field sees it, so the press that deletes
+                             * the last letter doesn't also close.
+                             */
                             event.key == Key.Backspace &&
                             event.type == KeyEventType.KeyDown &&
                             !assistPromptActive
@@ -5841,16 +5846,16 @@ fun TitanApp(
                                                 } else {
 
 
-                                                    launcherSettingsPage =
-                                                        LauncherSettingsPage.CALENDARS
+                                                launcherSettingsPage =
+                                                    LauncherSettingsPage.CALENDARS
 
-                                                    calendarVisibilityLoading =
-                                                        true
+                                                calendarVisibilityLoading =
+                                                    true
 
-                                                    requestGoogleAuthorization(
-                                                        action =
-                                                            GoogleCalendarAction.LOAD_VISIBILITY
-                                                    )
+                                                requestGoogleAuthorization(
+                                                    action =
+                                                        GoogleCalendarAction.LOAD_VISIBILITY
+                                                )
                                                 }
                                             },
                                             onProductivityBar = {
@@ -6028,16 +6033,16 @@ fun TitanApp(
                                         } else {
 
 
-                                            launcherSettingsPage =
-                                                LauncherSettingsPage.CALENDARS
+                                        launcherSettingsPage =
+                                            LauncherSettingsPage.CALENDARS
 
-                                            calendarVisibilityLoading =
-                                                true
+                                        calendarVisibilityLoading =
+                                            true
 
-                                            requestGoogleAuthorization(
-                                                action =
-                                                    GoogleCalendarAction.LOAD_VISIBILITY
-                                            )
+                                        requestGoogleAuthorization(
+                                            action =
+                                                GoogleCalendarAction.LOAD_VISIBILITY
+                                        )
                                         }
                                     },
                                     onProductivityBar = {

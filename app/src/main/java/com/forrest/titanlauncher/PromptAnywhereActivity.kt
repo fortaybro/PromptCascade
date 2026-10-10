@@ -111,11 +111,11 @@ class PromptAnywhereActivity :
                                         ReadabilityFontWeightValue
                                 )
                         ) {
-                            InterceptPlatformTextInput(
-                                interceptor = { _, _ ->
-                                    awaitCancellation()
-                                }
-                            ) {
+                            /*
+                             * Keyboard app allowed or not: see
+                             * PromptKeyboard.kt.
+                             */
+                            PromptTextInput {
                                 TitanApp(
                                     homeRequestVersion = 0,
                                     assistOverlay = true
