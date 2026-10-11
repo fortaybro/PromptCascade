@@ -113,6 +113,22 @@ internal fun cascadeColorForAction(
         else -> null
     }
 
+/*
+ * The card colour for a hub item: texts yellow, missed calls fire
+ * orange, other calls pale lilac, mail blue, other apps' notifications
+ * soft white.
+ */
+internal fun cascadeColorForHubItem(
+    item: HubDisplayItem
+): Color =
+    when (item.type) {
+        HubItemType.MESSAGE -> CascadeColors.Text
+        HubItemType.CALL ->
+            if (item.missed) CascadeColors.Call else CascadeColors.Later
+        HubItemType.EMAIL -> CascadeColors.Mail
+        HubItemType.NOTIFICATION -> CascadeColors.Ask
+    }
+
 internal data class CascadeCard(
     val key: String,
     val kind: CascadeKind,

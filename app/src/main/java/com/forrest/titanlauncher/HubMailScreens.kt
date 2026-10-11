@@ -1735,13 +1735,23 @@ internal fun HubScreen(
                             }
                         ) { index, item ->
 
-                            DaylightCardSegment(
-                                isFirst = index == 0,
-                                isLast = index == nowItems.lastIndex
+                            Box(
+                                /*
+                                 * Cascade: every item is its own card in its
+                                 * kind's colour, with a small gap between.
+                                 */
+                                modifier =
+                                    Modifier.padding(
+                                        bottom = 6.dp
+                                    )
                             ) {
                                 HubRow(
                                     item =
                                         item,
+                                    cascadeColor =
+                                        cascadeColorForHubItem(
+                                            item
+                                        ),
                                     selected =
                                         index ==
                                                 selectedIndex,
@@ -1791,13 +1801,23 @@ internal fun HubScreen(
                             val flatIndex =
                                 nowCount + index
 
-                            DaylightCardSegment(
-                                isFirst = index == 0,
-                                isLast = index == earlierItems.lastIndex
+                            Box(
+                                /*
+                                 * Cascade: every item is its own card in its
+                                 * kind's colour, with a small gap between.
+                                 */
+                                modifier =
+                                    Modifier.padding(
+                                        bottom = 6.dp
+                                    )
                             ) {
                                 HubRow(
                                     item =
                                         item,
+                                    cascadeColor =
+                                        cascadeColorForHubItem(
+                                            item
+                                        ),
                                     selected =
                                         flatIndex ==
                                                 selectedIndex,
@@ -2134,8 +2154,19 @@ internal fun HubRow(
     item: HubDisplayItem,
     selected: Boolean,
     onClick: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /*
+     * Cascade: draw the row as a card in this colour with dark ink
+     * text. Null keeps the plain row (used inside other cards).
+     */
+    cascadeColor: Color? = null
 ) {
+    val onCard =
+        cascadeColor != null
+    val mainText =
+        if (onCard) CascadeColors.Ink else PrimaryText
+    val mutedText =
+        if (onCard) CascadeColors.Ink.copy(alpha = 0.72f) else SecondaryText
 
     val contactPhoto =
         rememberContactPhoto(
@@ -2154,17 +2185,38 @@ internal fun HubRow(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 46.dp)
-                .background(
-                    if (selected) AccentOrange.copy(alpha = 0.08f)
-                    else Color.Transparent,
-                    RoundedCornerShape(10.dp)
+                .then(
+                    if (cascadeColor != null) {
+                        Modifier
+                            .background(
+                                cascadeColor,
+                                RoundedCornerShape(16.dp)
+                            )
+                            .then(
+                                if (selected) {
+                                    Modifier.border(
+                                        1.5.dp,
+                                        CascadeColors.Ink,
+                                        RoundedCornerShape(16.dp)
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            )
+                    } else {
+                        Modifier.background(
+                            if (selected) AccentOrange.copy(alpha = 0.08f)
+                            else Color.Transparent,
+                            RoundedCornerShape(10.dp)
+                        )
+                    }
                 )
                 .clickable {
                     onClick()
                 }
                 .padding(
-                    start = 6.dp,
-                    end = 2.dp,
+                    start = if (onCard) 10.dp else 6.dp,
+                    end = if (onCard) 6.dp else 2.dp,
                     top = 8.dp,
                     bottom = 8.dp
                 ),
@@ -2175,7 +2227,8 @@ internal fun HubRow(
 
         HubAvatar(
             item = item,
-            photo = contactPhoto
+            photo = contactPhoto,
+            cardColor = cascadeColor
         )
 
         Spacer(Modifier.width(10.dp))
@@ -2197,7 +2250,7 @@ internal fun HubRow(
                 ) {
                     Text(
                         text = item.title,
-                        color = PrimaryText,
+                        color = mainText,
                         fontSize = 10.5.sp,
                         lineHeight = 13.sp,
                         fontFamily = InterfaceFont,
@@ -2209,13 +2262,13 @@ internal fun HubRow(
 
                     Spacer(Modifier.width(6.dp))
 
-                    HubTimeText(item)
+                    HubTimeText(item, onCard)
                 }
 
                 if (emailParts.subject.isNotBlank()) {
                     Text(
                         text = emailParts.subject,
-                        color = PrimaryText,
+                        color = mainText,
                         fontSize = 10.sp,
                         lineHeight = 12.5.sp,
                         fontFamily = InterfaceFont,
@@ -2228,7 +2281,7 @@ internal fun HubRow(
                 if (emailParts.body.isNotBlank()) {
                     Text(
                         text = emailParts.body.replace('\n', ' '),
-                        color = SecondaryText,
+                        color = mutedText,
                         fontSize = 9.sp,
                         lineHeight = 11.5.sp,
                         fontFamily = InterfaceFont,
@@ -2244,7 +2297,7 @@ internal fun HubRow(
 
                 Text(
                     text = emailParts.tag,
-                    color = SecondaryText,
+                    color = mutedText,
                     fontSize = 7.5.sp,
                     lineHeight = 9.sp,
                     fontFamily = InterfaceFont,
@@ -2255,7 +2308,8 @@ internal fun HubRow(
                             .align(Alignment.CenterVertically)
                             .widthIn(max = 70.dp)
                             .background(
-                                BackgroundBlack,
+                                if (onCard) CascadeColors.Ink.copy(alpha = 0.12f)
+                                else BackgroundBlack,
                                 RoundedCornerShape(999.dp)
                             )
                             .padding(
@@ -2274,7 +2328,7 @@ internal fun HubRow(
 
                 Text(
                     text = item.title,
-                    color = PrimaryText,
+                    color = mainText,
                     fontSize = 10.5.sp,
                     lineHeight = 13.sp,
                     fontFamily = InterfaceFont,
@@ -2293,8 +2347,8 @@ internal fun HubRow(
                             item.preview.replace('\n', ' ')
                         },
                     color =
-                        if (item.missed) ProductivityRed
-                        else SecondaryText,
+                        if (item.missed && !onCard) ProductivityRed
+                        else mutedText,
                     fontSize = 9.sp,
                     lineHeight = 11.5.sp,
                     fontFamily = InterfaceFont,
@@ -2305,7 +2359,7 @@ internal fun HubRow(
 
             Spacer(Modifier.width(8.dp))
 
-            HubTimeText(item)
+            HubTimeText(item, onCard)
         }
 
         /*
@@ -2325,7 +2379,9 @@ internal fun HubRow(
             Icon(
                 imageVector = Icons.Outlined.Close,
                 contentDescription = "clear",
-                tint = TertiaryText.copy(alpha = 0.7f),
+                tint =
+                    if (onCard) CascadeColors.Ink.copy(alpha = 0.55f)
+                    else TertiaryText.copy(alpha = 0.7f),
                 modifier = Modifier.size(9.dp)
             )
         }
@@ -2337,13 +2393,17 @@ internal fun HubRow(
  */
 @Composable
 private fun HubTimeText(
-    item: HubDisplayItem
+    item: HubDisplayItem,
+    onCard: Boolean = false
 ) {
     Text(
         text = hubRelativeTime(item.timestamp),
         color =
-            if (item.unread) AccentOrange
-            else SecondaryText,
+            when {
+                onCard -> CascadeColors.Ink
+                item.unread -> AccentOrange
+                else -> SecondaryText
+            },
         fontSize = 8.5.sp,
         lineHeight = 10.sp,
         fontFamily = InterfaceFont,
@@ -2363,7 +2423,8 @@ private fun HubTimeText(
 @Composable
 private fun HubAvatar(
     item: HubDisplayItem,
-    photo: ImageBitmap?
+    photo: ImageBitmap?,
+    cardColor: Color? = null
 ) {
 
     val avatarSize =
@@ -2386,6 +2447,55 @@ private fun HubAvatar(
         contactInitials(
             item.title
         )
+
+    if (cardColor != null) {
+        /*
+         * Cascade card: an ink circle with initials (or the kind's
+         * icon) in the card's own colour.
+         */
+        Box(
+            modifier =
+                Modifier
+                    .size(avatarSize)
+                    .background(
+                        CascadeColors.Ink,
+                        CircleShape
+                    ),
+            contentAlignment = Alignment.Center
+        ) {
+            val showInitials =
+                (item.type == HubItemType.MESSAGE ||
+                        item.type == HubItemType.EMAIL ||
+                        item.type == HubItemType.CALL) &&
+                        initials != "#" &&
+                        !item.isGroup
+            if (showInitials) {
+                Text(
+                    text = initials,
+                    color = cardColor,
+                    fontSize = 9.sp,
+                    lineHeight = 10.sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+            } else {
+                Icon(
+                    imageVector =
+                        when (item.type) {
+                            HubItemType.CALL -> Icons.Outlined.Call
+                            HubItemType.EMAIL -> Icons.Outlined.Email
+                            HubItemType.MESSAGE -> Icons.Outlined.Message
+                            HubItemType.NOTIFICATION -> Icons.Outlined.Notifications
+                        },
+                    contentDescription = null,
+                    tint = cardColor,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+        }
+        return
+    }
 
     when {
 
