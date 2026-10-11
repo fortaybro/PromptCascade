@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_daylight_background"/>
-    <foreground android:drawable="@drawable/ic_daylight_foreground"/>
-    <monochrome android:drawable="@drawable/ic_daylight_foreground"/>
+    <background android:drawable="@drawable/ic_cascade_background"/>
+    <foreground android:drawable="@drawable/ic_cascade_foreground"/>
+    <monochrome android:drawable="@drawable/ic_cascade_monochrome"/>
 </adaptive-icon>

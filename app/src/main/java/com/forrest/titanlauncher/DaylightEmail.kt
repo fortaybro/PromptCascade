@@ -167,7 +167,7 @@ internal fun DaylightWriteInChips() {
         )
 
         DaylightChoiceChip(
-            label = "Prompt Launcher",
+            label = "Prompt Cascade",
             selected = target.isBlank(),
             onClick = {
                 MailWriteInOnce =

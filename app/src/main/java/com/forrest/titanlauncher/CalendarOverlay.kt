@@ -454,7 +454,7 @@ internal fun CalendarSetupOverlayCard(
                                 if (usesGoogle) {
                                     "Google didn't return any calendars you can add events to. Try Phone calendars instead."
                                 } else {
-                                    "Allow calendar access, or add an account in your phone's calendar app. Prompt Launcher works fine without a calendar."
+                                    "Allow calendar access, or add an account in your phone's calendar app. Prompt Cascade works fine without a calendar."
                                 },
                             color = SecondaryText,
                             fontSize = 9.sp,

@@ -386,7 +386,7 @@ class LauncherSettingsStore(
                     backupFormat ==
                     "titan_launcher_settings_backup"
         ) {
-            "Not a Prompt Launcher settings backup"
+            "Not a Prompt Cascade settings backup"
         }
 
         require(

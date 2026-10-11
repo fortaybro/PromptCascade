@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Prompt Cascade icon: three cards in a deck, in the card colours
+    (mail blue at the back, text yellow, calendar lilac in front)
+    with two ink lines on the front card. Kept inside the adaptive
+    icon's 66 dp safe circle so no launcher mask clips a corner.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFA9D8FF" android:pathData="M44,28 H64 A6,6 0 0 1 70,34 V54 A6,6 0 0 1 64,60 H44 A6,6 0 0 1 38,54 V34 A6,6 0 0 1 44,28 Z"/>
+    <path android:fillColor="#FFFFE38A" android:pathData="M41,36 H67 A7,7 0 0 1 74,43 V61 A7,7 0 0 1 67,68 H41 A7,7 0 0 1 34,61 V43 A7,7 0 0 1 41,36 Z"/>
+    <path android:fillColor="#FFCBB8FF" android:pathData="M37,45 H71 A8,8 0 0 1 79,53 V67 A8,8 0 0 1 71,75 H37 A8,8 0 0 1 29,67 V53 A8,8 0 0 1 37,45 Z"/>
+    <path android:fillColor="#FF1E1A2E" android:pathData="M38.25,53 H59.75 A2.25,2.25 0 0 1 62,55.25 V55.25 A2.25,2.25 0 0 1 59.75,57.5 H38.25 A2.25,2.25 0 0 1 36,55.25 V55.25 A2.25,2.25 0 0 1 38.25,53 Z"/>
+    <path android:fillColor="#FF1E1A2E" android:pathData="M37.75,62 H50.25 A1.75,1.75 0 0 1 52,63.75 V63.75 A1.75,1.75 0 0 1 50.25,65.5 H37.75 A1.75,1.75 0 0 1 36,63.75 V63.75 A1.75,1.75 0 0 1 37.75,62 Z"/>
+</vector>

@@ -543,7 +543,7 @@ class KeyProbeActivity :
 
         return buildString {
 
-            append("DAYLIGHT KEY PROBE\n")
+            append("PROMPT CASCADE KEY PROBE\n")
 
             append("build ")
             append(
@@ -626,7 +626,7 @@ class KeyProbeActivity :
 
                 putExtra(
                     Intent.EXTRA_SUBJECT,
-                    "Prompt Launcher key probe"
+                    "Prompt Cascade key probe"
                 )
 
                 putExtra(

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Themed-icon version (Android 13+): one colour, which the system
+    tints. The cards sit slightly apart so the deck still reads.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M42.5,28 H65.5 A2.5,2.5 0 0 1 68,30.5 V30.5 A2.5,2.5 0 0 1 65.5,33 H42.5 A2.5,2.5 0 0 1 40,30.5 V30.5 A2.5,2.5 0 0 1 42.5,28 Z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M38,36.5 H70 A3,3 0 0 1 73,39.5 V38.5 A3,3 0 0 1 70,41.5 H38 A3,3 0 0 1 35,38.5 V39.5 A3,3 0 0 1 38,36.5 Z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M37,45 H71 A8,8 0 0 1 79,53 V67 A8,8 0 0 1 71,75 H37 A8,8 0 0 1 29,67 V53 A8,8 0 0 1 37,45 Z"/>
+</vector>

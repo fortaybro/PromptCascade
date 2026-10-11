@@ -3348,7 +3348,7 @@ fun TitanHomeScreen(
                         )
                         putExtra(
                             AlarmClock.EXTRA_MESSAGE,
-                            "Prompt Launcher"
+                            "Prompt Cascade"
                         )
                         putExtra(
                             AlarmClock.EXTRA_SKIP_UI,
@@ -3409,7 +3409,7 @@ fun TitanHomeScreen(
                         )
                         putExtra(
                             AlarmClock.EXTRA_MESSAGE,
-                            "Prompt Launcher"
+                            "Prompt Cascade"
                         )
                         putExtra(
                             AlarmClock.EXTRA_SKIP_UI,
@@ -3589,7 +3589,7 @@ fun TitanHomeScreen(
                 )
 
                 setStatusText(
-                    "ENABLE DAYLIGHT USAGE ACCESS"
+                    "ENABLE PROMPT CASCADE USAGE ACCESS"
                 )
             } catch (
                 _: Exception
@@ -4471,7 +4471,7 @@ fun TitanHomeScreen(
 
                         putExtra(
                             AlarmClock.EXTRA_MESSAGE,
-                            "Prompt Launcher"
+                            "Prompt Cascade"
                         )
 
                         putExtra(
@@ -4551,7 +4551,7 @@ fun TitanHomeScreen(
 
                         putExtra(
                             AlarmClock.EXTRA_MESSAGE,
-                            "Prompt Launcher"
+                            "Prompt Cascade"
                         )
 
                         putExtra(

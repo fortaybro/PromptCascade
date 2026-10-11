@@ -701,8 +701,8 @@ internal fun SettingsMainScreen(
 
             SettingsNavigationRow(
                 symbol = "◔",
-                title = "24-hour ring",
-                subtitle = "Screen-time ring & distracting apps",
+                title = "Focus bars",
+                subtitle = "Screen-time bars & distracting apps",
                 onClick = onProductivityBar
             )
         }
@@ -803,7 +803,7 @@ internal fun SettingsMainScreen(
 
             SettingsCommandRow(
                 title = "Screen time",
-                detail = "Usage access for the ring",
+                detail = "Usage access for the focus bars",
                 command = "usagesetup",
                 onRun = runCommand
             )
@@ -1436,7 +1436,7 @@ internal fun NotificationSettingsScreen(
 
     val composeChoices =
         listOf(
-            "" to "Prompt Launcher (Gmail)"
+            "" to "Prompt Cascade (Gmail)"
         ) +
                 mailApps.map {
                     it.packageName to it.label
@@ -2179,7 +2179,7 @@ internal fun ProductivityBarSettingsScreen(
                 )
     ) {
         SettingsHeader(
-            title = "24-hour ring",
+            title = "Focus bars",
             onBack = onBack
         )
 
@@ -2203,7 +2203,7 @@ internal fun ProductivityBarSettingsScreen(
             item {
                 SettingsControlCard {
                     SettingsToggleRow(
-                        label = "24-hour ring",
+                        label = "Focus bars",
                         detail = "Flags hours with 20+ min on distracting apps",
                         enabled = settings.showProductivityDots,
                         onToggle = { enabled ->

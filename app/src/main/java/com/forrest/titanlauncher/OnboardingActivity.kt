@@ -1293,7 +1293,7 @@ private fun PromptLauncherOnboarding(
                             ) {
                                 "Continue"
                             } else {
-                                "Choose Prompt Launcher"
+                                "Choose Prompt Cascade"
                             },
                         onPrimary = {
                             if (
@@ -1478,7 +1478,7 @@ private fun WelcomeStep(
 
             Text(
                 text =
-                    "Prompt Launcher",
+                    "Prompt Cascade",
                 color =
                     PrimaryText,
                 fontSize =
@@ -1587,7 +1587,7 @@ private fun PermissionsStep(
 
         DaylightOnboardingTitle(
             title =
-                "What Prompt Launcher can see",
+                "What Prompt Cascade can see",
             subtitle =
                 "Each one turns on a feature. Skip any you don't want."
         )
@@ -1690,7 +1690,7 @@ private fun PermissionsStep(
                 title =
                     "Usage access",
                 detail =
-                    "Fills in the 24-hour ring"
+                    "Fills in the focus bars on home"
             ) {
                 if (
                     usageAccessReady
@@ -1767,7 +1767,7 @@ private fun PermissionsStep(
         ) {
             DaylightOnboardingNote(
                 text =
-                    "Weather is optional. Prompt Launcher works without it."
+                    "Weather is optional. Prompt Cascade works without it."
             )
         }
     }
@@ -1830,7 +1830,7 @@ private fun UsageAccessPromptDialog(
         ) {
             Text(
                 text =
-                    "Allow Prompt Launcher to see app usage?",
+                    "Allow Prompt Cascade to see app usage?",
                 color =
                     PrimaryText,
                 fontSize =
@@ -1854,7 +1854,7 @@ private fun UsageAccessPromptDialog(
 
             Text(
                 text =
-                    "This fills in the 24-hour ring. On the next screen, tap Prompt Launcher and turn on usage access.",
+                    "This fills in the focus bars on home. On the next screen, tap Prompt Cascade and turn on usage access.",
                 color =
                     SecondaryText,
                 fontSize =
@@ -2076,9 +2076,9 @@ private fun HomeStep(
 
         DaylightOnboardingTitle(
             title =
-                "Make Prompt Launcher home",
+                "Make Prompt Cascade home",
             subtitle =
-                "Set Prompt Launcher as your Home app so the Home button always comes back here."
+                "Set Prompt Cascade as your Home app so the Home button always comes back here."
         )
 
         DaylightCard(
@@ -2098,7 +2098,7 @@ private fun HomeStep(
                     if (
                         homeReady
                     ) {
-                        "Prompt Launcher is your Home app"
+                        "Prompt Cascade is your Home app"
                     } else {
                         "Android will ask which launcher to use"
                     }
@@ -2157,7 +2157,7 @@ private fun MessagesSetupStep(
             title =
                 "Messages",
             subtitle =
-                "Choose Prompt Launcher as your default SMS app."
+                "Choose Prompt Cascade as your default SMS app."
         )
 
         DaylightCard {
@@ -2167,7 +2167,7 @@ private fun MessagesSetupStep(
                 detail =
                     when {
                         smsReady ->
-                            "Messages are ready inside Prompt Launcher"
+                            "Messages are ready inside Prompt Cascade"
 
                         !smsRoleAvailable ->
                             "Unavailable on this device"
@@ -2210,7 +2210,7 @@ private fun MessagesSetupStep(
         ) {
             DaylightOnboardingNote(
                 text =
-                    "Sideloaded: if SMS access is denied, open app settings, tap ⋮ → Allow restricted settings, then come back and choose Prompt Launcher again."
+                    "Sideloaded: if SMS access is denied, open app settings, tap ⋮ → Allow restricted settings, then come back and choose Prompt Cascade again."
             )
 
             DaylightOnboardingLink(
@@ -2476,7 +2476,7 @@ private fun GeminiSetupStep(
         DaylightOnboardingNote(
             text =
                 "Your question goes straight from this phone to Google Gemini with your key. " +
-                        "Prompt Launcher has no server. Calendar, texts and mail are not sent unless you " +
+                        "Prompt Cascade has no server. Calendar, texts and mail are not sent unless you " +
                         "turn each one on later with the geminisetup command, which lists exactly what each sends."
         )
     }
@@ -2580,7 +2580,7 @@ private fun ReadyStep(
         ) {
             DaylightOnboardingNote(
                 text =
-                    "Weather location is on. Prompt Launcher will keep trying."
+                    "Weather location is on. Prompt Cascade will keep trying."
             )
         }
 
@@ -2595,7 +2595,7 @@ private fun ReadyStep(
 
         DaylightOnboardingNote(
             text =
-                "More commands are in the help card inside Prompt Launcher."
+                "More commands are in the help card inside Prompt Cascade."
         )
     }
 }

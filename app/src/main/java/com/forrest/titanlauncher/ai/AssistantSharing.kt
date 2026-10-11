@@ -58,7 +58,7 @@ object AssistantSharingDisclosure {
                 "Asking which emails need replies sends up to ${AssistantPayloadLimits.PRIORITIZE_EMAILS} emails (first ${AssistantPayloadLimits.PRIORITIZE_EMAIL_PREVIEW_CHARS} characters each)."
 
     const val DESTINATION =
-        "It goes straight from this phone to Google Gemini using your own API key. Prompt Launcher has no server and never sees it."
+        "It goes straight from this phone to Google Gemini using your own API key. Prompt Cascade has no server and never sees it."
 }
 
 class AssistantSharingStore(
