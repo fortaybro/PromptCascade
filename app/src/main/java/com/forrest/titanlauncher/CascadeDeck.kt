@@ -62,6 +62,7 @@ internal object CascadeColors {
     val Todo = Color(0xFFB6F0C9)
     val Note = Color(0xFFFFC9A8)
     val Call = Color(0xFFFF6A2B)
+    val Ask = Color(0xFFF4F1FA)
 }
 
 internal enum class CascadeKind(
@@ -77,6 +78,25 @@ internal enum class CascadeKind(
     NOTE("NOTE", CascadeColors.Note)
 }
 
+/*
+ * The card colour for a command being typed in the prompt, matching
+ * the card it will become. Null for anything that isn't one of the
+ * deck's kinds (app search, plain text, word commands).
+ */
+internal fun cascadeColorForAction(
+    action: String
+): Color? =
+    when (action) {
+        "add event" -> CascadeColors.Calendar
+        "add task" -> CascadeColors.Todo
+        "add note" -> CascadeColors.Note
+        "set timer", "set alarm" -> CascadeColors.Later
+        "compose mail" -> CascadeColors.Mail
+        "message" -> CascadeColors.Text
+        "ask assistant" -> CascadeColors.Ask
+        else -> null
+    }
+
 internal data class CascadeCard(
     val key: String,
     val kind: CascadeKind,
@@ -91,6 +111,12 @@ private val CascadeOpenHeight = 128.dp
 private val CascadeStripHeight = 66.dp
 private val CascadeStripStep = 38.dp
 private val CascadeGap = 10.dp
+
+/*
+ * The part of a strip that must show for it to be drawn: its label
+ * row and a little card below it.
+ */
+private val CascadeStripLabelRoom = 34.dp
 
 /*
  * The whole home body below the header: big time, weather and the
@@ -284,40 +310,60 @@ private fun CascadeCardStack(
     ) {
 
         val openHeight =
-            if (maxHeight < CascadeOpenHeight + CascadeGap + CascadeStripStep) {
+            if (maxHeight < CascadeOpenHeight + CascadeGap + CascadeStripLabelRoom) {
                 maxHeight
             } else {
                 CascadeOpenHeight
             }
 
-        cards.forEachIndexed { index, card ->
-
-            if (index == 0) {
-
-                CascadeOpenCard(
-                    card = card,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(openHeight)
-                )
-
+        /*
+         * How many strips fit with at least their label row showing.
+         * A strip cut through its text looks broken, so those are
+         * left out and the last one shown says how many more wait.
+         */
+        val stripsRoom =
+            maxHeight - openHeight - CascadeGap
+        val stripsThatFit =
+            if (stripsRoom < CascadeStripLabelRoom) {
+                0
             } else {
-
-                val top =
-                    openHeight + CascadeGap + CascadeStripStep * (index - 1)
-
-                if (top < maxHeight) {
-                    CascadeStripCard(
-                        card = card,
-                        modifier =
-                            Modifier
-                                .offset(y = top)
-                                .fillMaxWidth()
-                                .height(CascadeStripHeight)
-                    )
-                }
+                1 + ((stripsRoom - CascadeStripLabelRoom) / CascadeStripStep).toInt()
             }
+        val strips =
+            cards.drop(1)
+        val shownStrips =
+            strips.take(stripsThatFit)
+        val hiddenCount =
+            strips.size - shownStrips.size
+
+        cards.firstOrNull()?.let { card ->
+            CascadeOpenCard(
+                card = card,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(openHeight)
+            )
+        }
+
+        shownStrips.forEachIndexed { index, card ->
+
+            val isLastShown =
+                index == shownStrips.lastIndex
+
+            CascadeStripCard(
+                card =
+                    if (isLastShown && hiddenCount > 0) {
+                        card.copy(meta = "+$hiddenCount more")
+                    } else {
+                        card
+                    },
+                modifier =
+                    Modifier
+                        .offset(y = openHeight + CascadeGap + CascadeStripStep * index)
+                        .fillMaxWidth()
+                        .height(CascadeStripHeight)
+            )
         }
     }
 }
@@ -347,7 +393,7 @@ private fun CascadeOpenCard(
             CascadeKindLabel(card.meta.uppercase())
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
             text = card.title,
@@ -360,8 +406,19 @@ private fun CascadeOpenCard(
             overflow = TextOverflow.Ellipsis
         )
 
-        if (card.detail.isNotBlank()) {
-            Spacer(modifier = Modifier.height(3.dp))
+        Spacer(modifier = Modifier.weight(1f))
+
+        /*
+         * Detail on the left, Open on the right, on one bottom row.
+         * Stacking them made the button get squeezed on the Titan's
+         * short screen.
+         */
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+
             Text(
                 text = card.detail,
                 color = CascadeColors.Ink,
@@ -370,26 +427,27 @@ private fun CascadeOpenCard(
                 fontFamily = InterfaceFont,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
-        }
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        Box(
-            modifier =
-                Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(CascadeColors.Ink)
-                    .padding(horizontal = 11.dp, vertical = 5.dp)
-        ) {
-            Text(
-                text = "Open",
-                color = card.kind.color,
-                fontSize = 10.sp,
-                fontFamily = InterfaceFont,
-                fontWeight = FontWeight.SemiBold
-            )
+            Box(
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(CascadeColors.Ink)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Open",
+                    color = card.kind.color,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    fontFamily = InterfaceFont,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

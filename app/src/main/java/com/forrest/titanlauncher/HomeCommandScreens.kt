@@ -11039,6 +11039,23 @@ internal fun CommandContextPanel(
                 apps.isNotEmpty()
 
     /*
+     * Cascade: a command being written shows as a card in its kind's
+     * colour (lilac event, mint to-do, peach note...). Null keeps the
+     * plain surface for contact and app lists and plain text.
+     */
+    val cascadeColor =
+        if (
+            lockedContact == null &&
+            !showsList
+        ) {
+            cascadeColorForAction(
+                context.action
+            )
+        } else {
+            null
+        }
+
+    /*
      * The muted line under the card.
      */
     val hint =
@@ -11077,9 +11094,15 @@ internal fun CommandContextPanel(
                 Modifier
                     .fillMaxWidth()
                     .background(
-                        SurfaceBlack,
+                        cascadeColor ?: SurfaceBlack,
                         RoundedCornerShape(
-                            13.dp
+                            if (
+                                cascadeColor != null
+                            ) {
+                                20.dp
+                            } else {
+                                13.dp
+                            }
                         )
                     )
                     .padding(
@@ -11125,7 +11148,9 @@ internal fun CommandContextPanel(
                     raw =
                         raw,
                     taskTarget =
-                        taskTarget
+                        taskTarget,
+                    onCard =
+                        cascadeColor != null
                 )
 
             } else if (
@@ -11392,7 +11417,12 @@ private fun DaylightPromptContextContent(
     action: String,
     detail: String?,
     raw: String,
-    taskTarget: String?
+    taskTarget: String?,
+    /*
+     * Drawn on a Cascade colour card: dark ink text instead of the
+     * theme's text colours.
+     */
+    onCard: Boolean = false
 ) {
 
     val cleanDetail =
@@ -11575,10 +11605,35 @@ private fun DaylightPromptContextContent(
             )
     ) {
 
-        DaylightPromptLabel(
-            text =
-                label
-        )
+        if (
+            onCard
+        ) {
+            Text(
+                text =
+                    label.uppercase(),
+                color =
+                    CascadeColors.Ink,
+                fontSize =
+                    7.7.sp,
+                lineHeight =
+                    9.5.sp,
+                letterSpacing =
+                    0.9.sp,
+                fontFamily =
+                    InterfaceFont,
+                fontWeight =
+                    FontWeight.Bold,
+                maxLines =
+                    1,
+                overflow =
+                    TextOverflow.Ellipsis
+            )
+        } else {
+            DaylightPromptLabel(
+                text =
+                    label
+            )
+        }
 
         if (
             title.isNotBlank()
@@ -11587,7 +11642,13 @@ private fun DaylightPromptContextContent(
                 text =
                     title,
                 color =
-                    PrimaryText,
+                    if (
+                        onCard
+                    ) {
+                        CascadeColors.Ink
+                    } else {
+                        PrimaryText
+                    },
                 fontSize =
                     15.5.sp,
                 lineHeight =
@@ -11612,7 +11673,15 @@ private fun DaylightPromptContextContent(
                 text =
                     hintLine,
                 color =
-                    SecondaryText,
+                    if (
+                        onCard
+                    ) {
+                        CascadeColors.Ink.copy(
+                            alpha = 0.72f
+                        )
+                    } else {
+                        SecondaryText
+                    },
                 fontSize =
                     8.5.sp,
                 lineHeight =
