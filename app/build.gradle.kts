@@ -5,16 +5,21 @@ plugins {
 }
 
 android {
+    /*
+     * Prompt Cascade is a separate app from Prompt Launcher: its own
+     * applicationId, so both install side by side. The code namespace
+     * stays com.forrest.titanlauncher on purpose (no package rename).
+     */
     namespace = "com.forrest.titanlauncher"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.forrest.titanlauncher"
+        applicationId = "com.forrest.promptcascade"
         minSdk = 28
         targetSdk = 37
 
-        versionCode = 10
-        versionName = "2.2.0"
+        versionCode = 1
+        versionName = "1.0-beta.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
