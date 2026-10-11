@@ -27,12 +27,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -127,6 +129,40 @@ internal fun cascadeColorForHubItem(
             if (item.missed) CascadeColors.Call else CascadeColors.Later
         HubItemType.EMAIL -> CascadeColors.Mail
         HubItemType.NOTIFICATION -> CascadeColors.Ask
+    }
+
+/*
+ * The colour of the Cascade card being drawn, if any. Pieces shared
+ * with plain screens (quick reply's header, bubbles and field) read
+ * it and switch to dark ink on a card.
+ */
+internal val LocalCascadeCard =
+    staticCompositionLocalOf<Color?> { null }
+
+/*
+ * onCard when drawn on a Cascade card, otherwise the usual colour.
+ */
+@Composable
+@ReadOnlyComposable
+internal fun onCardOr(
+    onCard: Color,
+    otherwise: Color
+): Color =
+    if (LocalCascadeCard.current != null) onCard else otherwise
+
+/*
+ * The card colour for a quick reply entry. Texts are yellow whether
+ * they come from Prompt's own SMS store or from a messaging app's
+ * conversation notification (Google Messages and RCS arrive that
+ * way), the same rule the hub uses. Other apps' alerts are soft white.
+ */
+internal fun cascadeColorForQuickReply(
+    entry: QuickReplyEntry
+): Color =
+    if (entry.isMessage || entry.messages.isNotEmpty()) {
+        CascadeColors.Text
+    } else {
+        CascadeColors.Ask
     }
 
 internal data class CascadeCard(

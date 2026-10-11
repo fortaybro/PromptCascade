@@ -706,6 +706,16 @@ internal fun HubScreen(
                                         notification.packageName in
                                         mailPackages
 
+                            /*
+                             * The row's id includes when it was posted.
+                             * Mail apps reuse one notification for
+                             * each new email, so with the key alone an
+                             * email cleared here once kept every later
+                             * email from that app out of the hub
+                             * (while home still showed it).
+                             */
+                            val rowId =
+                                "notification:${notification.key}@${notification.timestamp}"
                             if (
                                 isMailApp
                             ) {
@@ -715,7 +725,7 @@ internal fun HubScreen(
                                  */
                                 return@map HubDisplayItem(
                                     id =
-                                        "notification:${notification.key}",
+                                        rowId,
                                     type =
                                         HubItemType.EMAIL,
                                     title =
@@ -745,7 +755,7 @@ internal fun HubScreen(
 
                             HubDisplayItem(
                                 id =
-                                    "notification:${notification.key}",
+                                    rowId,
                                 type =
                                     if (
                                         isConversation

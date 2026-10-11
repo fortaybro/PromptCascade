@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -969,7 +970,7 @@ internal fun QuickReplyOverlay(
                                 )
                                 .fillMaxWidth()
                                 .background(
-                                    SurfaceBlack,
+                                    CascadeColors.Call,
                                     RoundedCornerShape(
                                         QuickReplyCardRadius
                                     )
@@ -1020,7 +1021,7 @@ internal fun QuickReplyOverlay(
                                                 QuickReplyAvatarSize.dp
                                             )
                                             .background(
-                                                MissedCallFire.copy(alpha = 0.18f),
+                                                CascadeColors.Ink.copy(alpha = 0.12f),
                                                 CircleShape
                                             ),
                                     contentAlignment =
@@ -1040,7 +1041,7 @@ internal fun QuickReplyOverlay(
                                         text =
                                             call.name,
                                         color =
-                                            PrimaryText,
+                                            CascadeColors.Ink,
                                         fontSize =
                                             11.sp,
                                         lineHeight =
@@ -1059,7 +1060,7 @@ internal fun QuickReplyOverlay(
                                         text =
                                             "Missed call",
                                         color =
-                                            MissedCallFire,
+                                            CascadeColors.Ink.copy(alpha = 0.75f),
                                         fontSize =
                                             9.sp,
                                         lineHeight =
@@ -1073,7 +1074,7 @@ internal fun QuickReplyOverlay(
                                     text =
                                         "✕",
                                     color =
-                                        SecondaryText,
+                                        CascadeColors.Ink,
                                     fontSize =
                                         10.sp,
                                     fontFamily =
@@ -1097,78 +1098,83 @@ internal fun QuickReplyOverlay(
                     entries.isNotEmpty() ||
                     missedCalls.isEmpty()
                 )
-                Column(
-                    modifier =
-                        Modifier
-                            .padding(
-                                horizontal = QuickReplyPageGutter
-                            )
-                            .fillMaxWidth()
-                            .background(
-                                SurfaceBlack,
-                                RoundedCornerShape(
-                                    QuickReplyCardRadius
+                    Column(
+                        modifier =
+                            Modifier
+                                .padding(
+                                    horizontal = QuickReplyPageGutter
                                 )
-                            )
-                ) {
-
-                    if (
-                        entries.isEmpty()
+                                .fillMaxWidth()
+                                .background(
+                                    if (entries.isEmpty()) SurfaceBlack else Color.Transparent,
+                                    RoundedCornerShape(
+                                        QuickReplyCardRadius
+                                    )
+                                )
                     ) {
 
-                        QuickReplyEmptyState()
-
-                    } else {
-
-                        LazyColumn(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(
-                                        max =
-                                            QuickReplyListMaxHeight
-                                    )
+                        if (
+                            entries.isEmpty()
                         ) {
 
-                            itemsIndexed(
-                                items =
-                                    entries,
-                                key = { _, entry ->
-                                    entry.id
-                                }
-                            ) { index, entry ->
+                            QuickReplyEmptyState()
 
-                                if (
-                                    index > 0
-                                ) {
-                                    Box(
-                                        modifier =
-                                            Modifier.padding(
-                                                horizontal = QuickReplyCardPadding
-                                            )
+                        } else {
+
+                            LazyColumn(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(
+                                            max =
+                                                QuickReplyListMaxHeight
+                                        )
+                            ) {
+
+                                itemsIndexed(
+                                    items =
+                                        entries,
+                                    key = { _, entry ->
+                                        entry.id
+                                    }
+                                ) { index, entry ->
+
+                                    if (
+                                        index > 0
                                     ) {
-                                        DaylightRowDivider()
+                                        Spacer(
+                                            modifier =
+                                                Modifier.height(
+                                                    6.dp
+                                                )
+                                        )
+                                    }
+
+                                    CompositionLocalProvider(
+                                        LocalCascadeCard provides
+                                                cascadeColorForQuickReply(
+                                                    entry
+                                                )
+                                    ) {
+                                        QuickReplyRow(
+                                            entry =
+                                                entry,
+                                            onDismissEntry = {
+                                                dismissEntry(
+                                                    entry
+                                                )
+                                            },
+                                            onClick = {
+                                                selectEntry(
+                                                    entry
+                                                )
+                                            }
+                                        )
                                     }
                                 }
-
-                                QuickReplyRow(
-                                    entry =
-                                        entry,
-                                    onDismissEntry = {
-                                        dismissEntry(
-                                            entry
-                                        )
-                                    },
-                                    onClick = {
-                                        selectEntry(
-                                            entry
-                                        )
-                                    }
-                                )
                             }
                         }
                     }
-                }
 
                 if (
                     notice.isNotBlank()
@@ -1216,134 +1222,149 @@ internal fun QuickReplyOverlay(
                 }
 
                 /*
-                 * The stack: two thin cards peeking out above the
-                 * conversation card, hinting at the others waiting.
+                 * Cascade: the conversation is a card in its kind's
+                 * colour (texts yellow, other apps soft white), with
+                 * dark ink inside; the header, bubbles and reply field
+                 * read LocalCascadeCard to switch their colours.
                  */
-                Box(
-                    modifier =
-                        Modifier
-                            .padding(
-                                horizontal = QuickReplyPageGutter
-                            )
-                            .fillMaxWidth()
+                val cascadeCardColor =
+                    cascadeColorForQuickReply(
+                        activeEntry
+                    )
+
+                CompositionLocalProvider(
+                    LocalCascadeCard provides cascadeCardColor
                 ) {
-
+                    /*
+                     * The stack: two thin cards peeking out above the
+                     * conversation card, hinting at the others waiting.
+                     */
                     Box(
                         modifier =
                             Modifier
                                 .padding(
-                                    horizontal = 11.5.dp
+                                    horizontal = QuickReplyPageGutter
                                 )
                                 .fillMaxWidth()
-                                .height(
-                                    25.dp
-                                )
-                                .background(
-                                    lerp(
-                                        BorderGray,
-                                        SurfaceBlack,
-                                        0.4f
-                                    ),
-                                    RoundedCornerShape(
-                                        topStart = QuickReplyCardRadius,
-                                        topEnd = QuickReplyCardRadius
-                                    )
-                                )
-                    )
-
-                    Box(
-                        modifier =
-                            Modifier
-                                .padding(
-                                    start = 6.dp,
-                                    end = 6.dp,
-                                    top = 6.5.dp
-                                )
-                                .fillMaxWidth()
-                                .height(
-                                    25.dp
-                                )
-                                .background(
-                                    lerp(
-                                        BorderGray,
-                                        SurfaceBlack,
-                                        0.75f
-                                    ),
-                                    RoundedCornerShape(
-                                        topStart = QuickReplyCardRadius,
-                                        topEnd = QuickReplyCardRadius
-                                    )
-                                )
-                    )
-
-                    Column(
-                        modifier =
-                            Modifier
-                                .padding(
-                                    top = 13.dp
-                                )
-                                .fillMaxWidth()
-                                .background(
-                                    SurfaceBlack,
-                                    RoundedCornerShape(
-                                        QuickReplyCardRadius
-                                    )
-                                )
-                                .padding(
-                                    QuickReplyCardPadding
-                                ),
-                        verticalArrangement =
-                            Arrangement.spacedBy(
-                                8.dp
-                            )
                     ) {
 
-                        QuickReplyCardHeader(
-                            entry =
-                                activeEntry,
-                            onOpenFull = {
-                                openFullConversation(
-                                    activeEntry
+                        Box(
+                            modifier =
+                                Modifier
+                                    .padding(
+                                        horizontal = 11.5.dp
+                                    )
+                                    .fillMaxWidth()
+                                    .height(
+                                        25.dp
+                                    )
+                                    .background(
+                                        lerp(
+                                            cascadeCardColor,
+                                            BackgroundBlack,
+                                            0.55f
+                                        ),
+                                        RoundedCornerShape(
+                                            topStart = QuickReplyCardRadius,
+                                            topEnd = QuickReplyCardRadius
+                                        )
+                                    )
+                        )
+
+                        Box(
+                            modifier =
+                                Modifier
+                                    .padding(
+                                        start = 6.dp,
+                                        end = 6.dp,
+                                        top = 6.5.dp
+                                    )
+                                    .fillMaxWidth()
+                                    .height(
+                                        25.dp
+                                    )
+                                    .background(
+                                        lerp(
+                                            cascadeCardColor,
+                                            BackgroundBlack,
+                                            0.3f
+                                        ),
+                                        RoundedCornerShape(
+                                            topStart = QuickReplyCardRadius,
+                                            topEnd = QuickReplyCardRadius
+                                        )
+                                    )
+                        )
+
+                        Column(
+                            modifier =
+                                Modifier
+                                    .padding(
+                                        top = 13.dp
+                                    )
+                                    .fillMaxWidth()
+                                    .background(
+                                        cascadeCardColor,
+                                        RoundedCornerShape(
+                                            QuickReplyCardRadius
+                                        )
+                                    )
+                                    .padding(
+                                        QuickReplyCardPadding
+                                    ),
+                            verticalArrangement =
+                                Arrangement.spacedBy(
+                                    8.dp
                                 )
-                            },
-                            /*
-                             * X goes back to the list of everyone
-                             * waiting, not all the way home.
-                             */
-                            onClose = {
-                                closeReply()
-                            }
-                        )
-
-                        QuickReplyBubbles(
-                            entry =
-                                activeEntry
-                        )
-
-                        QuickReplyField(
-                            value =
-                                replyText,
-                            onValueChange = {
-                                replyText = it
-                            },
-                            placeholder =
-                                "Reply to " + quickReplyFirstName(
-                                    activeEntry
-                                ),
-                            focusRequester =
-                                replyFocus,
-                            onSend = {
-                                sendReply()
-                            }
-                        )
-
-                        if (
-                            notice.isNotBlank()
                         ) {
-                            QuickReplyNotice(
-                                text =
-                                    notice
+
+                            QuickReplyCardHeader(
+                                entry =
+                                    activeEntry,
+                                onOpenFull = {
+                                    openFullConversation(
+                                        activeEntry
+                                    )
+                                },
+                                /*
+                                 * X goes back to the list of everyone
+                                 * waiting, not all the way home.
+                                 */
+                                onClose = {
+                                    closeReply()
+                                }
                             )
+
+                            QuickReplyBubbles(
+                                entry =
+                                    activeEntry
+                            )
+
+                            QuickReplyField(
+                                value =
+                                    replyText,
+                                onValueChange = {
+                                    replyText = it
+                                },
+                                placeholder =
+                                    "Reply to " + quickReplyFirstName(
+                                        activeEntry
+                                    ),
+                                focusRequester =
+                                    replyFocus,
+                                onSend = {
+                                    sendReply()
+                                }
+                            )
+
+                            if (
+                                notice.isNotBlank()
+                            ) {
+                                QuickReplyNotice(
+                                    text =
+                                        notice
+                                )
+                            }
                         }
                     }
                 }
@@ -1430,8 +1451,31 @@ private fun QuickReplyAvatar(
                     )
         )
 
+    } else if (
+        LocalCascadeCard.current != null
+    ) {
+        /*
+         * On a Cascade card: an ink circle with the initials in the
+         * card's colour.
+         */
+        Box(
+            modifier =
+                Modifier
+                    .size(sizeDp.dp)
+                    .background(CascadeColors.Ink, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = quickReplyAvatarLabel(entry),
+                color = LocalCascadeCard.current ?: PrimaryText,
+                fontSize = 9.sp,
+                lineHeight = 10.sp,
+                fontFamily = InterfaceFont,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
     } else {
-
         DaylightAvatar(
             label =
                 quickReplyAvatarLabel(
@@ -1507,7 +1551,7 @@ private fun QuickReplyCardHeader(
                 text =
                     entry.title,
                 color =
-                    PrimaryText,
+                    onCardOr(CascadeColors.Ink, PrimaryText),
                 fontSize =
                     11.sp,
                 lineHeight =
@@ -1540,8 +1584,9 @@ private fun QuickReplyCardHeader(
                             )
                         )
                         .background(
-                            AccentOrange.copy(
-                                alpha = 0.16f
+                            onCardOr(
+                                CascadeColors.Ink.copy(alpha = 0.1f),
+                                AccentOrange.copy(alpha = 0.16f)
                             )
                         )
                         .clickable {
@@ -1562,7 +1607,7 @@ private fun QuickReplyCardHeader(
                     text =
                         openLabel,
                     color =
-                        AccentOrange,
+                        onCardOr(CascadeColors.Ink, AccentOrange),
                     fontSize =
                         9.sp,
                     lineHeight =
@@ -1586,7 +1631,7 @@ private fun QuickReplyCardHeader(
                             17f, 7f, 17f, 15f
                         ),
                     tint =
-                        AccentOrange,
+                        onCardOr(CascadeColors.Ink, AccentOrange),
                     size =
                         10.5.dp
                 )
@@ -1603,7 +1648,7 @@ private fun QuickReplyCardHeader(
                         CircleShape
                     )
                     .background(
-                        BackgroundBlack
+                        onCardOr(CascadeColors.Ink.copy(alpha = 0.1f), BackgroundBlack)
                     )
                     .clickable {
                         onClose()
@@ -1618,7 +1663,7 @@ private fun QuickReplyCardHeader(
                 contentDescription =
                     "Close",
                 tint =
-                    PrimaryText,
+                    onCardOr(CascadeColors.Ink, PrimaryText),
                 modifier =
                     Modifier
                         .size(
@@ -1850,7 +1895,8 @@ private fun QuickReplyBubbles(
                         modifier =
                             Modifier
                                 .background(
-                                    if (outgoing) AccentOrange else BackgroundBlack,
+                                    if (outgoing) onCardOr(CascadeColors.Ink, AccentOrange)
+                                    else onCardOr(Color.White.copy(alpha = 0.55f), BackgroundBlack),
                                     if (outgoing) {
                                         RoundedCornerShape(
                                             topStart = 13.dp,
@@ -1896,7 +1942,7 @@ private fun QuickReplyBubbles(
                                 text =
                                     message.sender,
                                 color =
-                                    SecondaryText,
+                                    onCardOr(CascadeColors.Ink.copy(alpha = 0.65f), SecondaryText),
                                 fontSize =
                                     7.5.sp,
                                 lineHeight =
@@ -1947,7 +1993,8 @@ private fun QuickReplyBubbles(
                                 text =
                                     caption,
                                 color =
-                                    if (outgoing) BackgroundBlack else PrimaryText,
+                                    if (outgoing) (LocalCascadeCard.current ?: BackgroundBlack)
+                                    else onCardOr(CascadeColors.Ink, PrimaryText),
                                 fontSize =
                                     10.sp,
                                 lineHeight =
@@ -2131,7 +2178,7 @@ private fun QuickReplyField(
                 .fillMaxWidth()
                 .border(
                     1.25.dp,
-                    AccentOrange,
+                    onCardOr(CascadeColors.Ink, AccentOrange),
                     RoundedCornerShape(
                         11.5.dp
                     )
@@ -2166,7 +2213,7 @@ private fun QuickReplyField(
                     text =
                         placeholder,
                     color =
-                        TertiaryText,
+                        onCardOr(CascadeColors.Ink.copy(alpha = 0.5f), TertiaryText),
                     fontSize =
                         10.sp,
                     lineHeight =
@@ -2190,7 +2237,7 @@ private fun QuickReplyField(
                 textStyle =
                     TextStyle(
                         color =
-                            PrimaryText,
+                            onCardOr(CascadeColors.Ink, PrimaryText),
                         fontSize =
                             10.sp,
                         lineHeight =
@@ -2200,7 +2247,7 @@ private fun QuickReplyField(
                     ),
                 cursorBrush =
                     SolidColor(
-                        AccentOrange
+                        onCardOr(CascadeColors.Ink, AccentOrange)
                     ),
                 modifier =
                     Modifier
@@ -2236,7 +2283,7 @@ private fun QuickReplyField(
                         )
                     )
                     .background(
-                        AccentOrange
+                        onCardOr(CascadeColors.Ink, AccentOrange)
                     )
                     .clickable {
                         onSend()
@@ -2256,7 +2303,7 @@ private fun QuickReplyField(
                         18f, 11f, 12f, 5f
                     ),
                 tint =
-                    BackgroundBlack,
+                    LocalCascadeCard.current ?: BackgroundBlack,
                 size =
                     13.dp
             )
@@ -2419,10 +2466,19 @@ private fun QuickReplyRow(
             entry.sourcePackage
         )
 
+    val card =
+        LocalCascadeCard.current
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .background(
+                    card ?: Color.Transparent,
+                    RoundedCornerShape(16.dp)
+                )
+                .clip(
+                    RoundedCornerShape(16.dp)
+                )
                 .clickable {
                     onClick()
                 }
@@ -2489,7 +2545,7 @@ private fun QuickReplyRow(
                 text =
                     entry.title,
                 color =
-                    PrimaryText,
+                    onCardOr(CascadeColors.Ink, PrimaryText),
                 fontSize =
                     10.5.sp,
                 lineHeight =
@@ -2508,7 +2564,7 @@ private fun QuickReplyRow(
                 text =
                     entry.preview,
                 color =
-                    SecondaryText,
+                    onCardOr(CascadeColors.Ink.copy(alpha = 0.72f), SecondaryText),
                 fontSize =
                     9.sp,
                 lineHeight =
@@ -2533,7 +2589,7 @@ private fun QuickReplyRow(
                         entry.timestamp
                     ),
                 color =
-                    TertiaryText,
+                    onCardOr(CascadeColors.Ink.copy(alpha = 0.6f), TertiaryText),
                 fontSize =
                     8.sp,
                 lineHeight =
@@ -2570,7 +2626,7 @@ private fun QuickReplyRow(
                     contentDescription =
                         "clear alert",
                     tint =
-                        TertiaryText,
+                        onCardOr(CascadeColors.Ink.copy(alpha = 0.6f), TertiaryText),
                     modifier =
                         Modifier
                             .size(
