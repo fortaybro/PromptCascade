@@ -248,13 +248,20 @@ internal fun CascadeHomeDeck(
     modifier: Modifier = Modifier,
     /*
      * Changes when Home is pressed: the deck goes back to its first
-     * card.
+     * card and the agenda card closes.
      */
-    resetKey: Any? = null
+    resetKey: Any? = null,
+    /*
+     * The next two weeks of events, for the agenda card that opens in
+     * the deck's place (see CascadeAgenda.kt).
+     */
+    agendaEvents: List<UpcomingCalendarEvent> = emptyList(),
+    onOpenCalendarApp: () -> Unit = {}
 ) {
 
     LaunchedEffect(resetKey) {
         CascadeDeckSelection = 0
+        CascadeAgendaOpen = false
     }
 
     DisposableEffect(Unit) {
@@ -295,6 +302,22 @@ internal fun CascadeHomeDeck(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        if (CascadeAgendaOpen) {
+
+            CascadeAgendaCard(
+                events = agendaEvents,
+                onOpenCalendarApp = onOpenCalendarApp,
+                onClose = {
+                    CascadeAgendaOpen = false
+                },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+            )
+
+        } else {
+
         CascadeCardStack(
             cards = dealt,
             position = selection + 1,
@@ -314,6 +337,7 @@ internal fun CascadeHomeDeck(
                     .fillMaxWidth()
                     .weight(1f)
         )
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 

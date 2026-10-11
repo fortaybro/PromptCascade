@@ -5992,9 +5992,15 @@ fun TitanHomeScreen(
                                 }
                             },
                             onOpenCalendar = {
-                                openCalendar()
+                                CascadeAgendaOpen =
+                                    true
                             }
                         ),
+                    agendaEvents =
+                        calendarAgendaEvents,
+                    onOpenCalendarApp = {
+                        openCalendar()
+                    },
                     resetKey =
                         homeRequestVersion,
                     shortcuts =

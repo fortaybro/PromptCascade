@@ -4136,7 +4136,8 @@ fun MailComposeScreen(
         Spacer(Modifier.height(10.dp))
 
         /*
-         * One white card: To, Subject, then the message.
+         * One card: To, Subject, then the message. Cascade: sky
+         * blue, the mail colour, with dark ink text.
          */
         Column(
             modifier =
@@ -4144,7 +4145,7 @@ fun MailComposeScreen(
                     .fillMaxWidth()
                     .weight(1f)
                     .background(
-                        SurfaceBlack,
+                        CascadeColors.Mail,
                         RoundedCornerShape(15.dp)
                     )
                     .padding(
@@ -4167,7 +4168,7 @@ fun MailComposeScreen(
 
                 Text(
                     text = "To",
-                    color = SecondaryText,
+                    color = CascadeColors.Ink.copy(alpha = 0.72f),
                     fontSize = 9.sp,
                     fontFamily = InterfaceFont,
                     modifier = Modifier.width(labelWidth)
@@ -4193,7 +4194,7 @@ fun MailComposeScreen(
                         textStyle =
                             TextStyle(
                                 color =
-                                    PrimaryText,
+                                    CascadeColors.Ink,
                                 fontSize =
                                     10.sp,
                                 fontFamily =
@@ -4201,7 +4202,7 @@ fun MailComposeScreen(
                             ),
                         cursorBrush =
                             SolidColor(
-                                AccentOrange
+                                CascadeColors.Ink
                             ),
                         decorationBox = { innerTextField ->
                             Box(
@@ -4210,7 +4211,7 @@ fun MailComposeScreen(
                                 if (toAddress.isEmpty()) {
                                     Text(
                                         text = "name@example.com",
-                                        color = TertiaryText,
+                                        color = CascadeColors.Ink.copy(alpha = 0.5f),
                                         fontSize = 10.sp,
                                         fontFamily = InterfaceFont,
                                         maxLines = 1
@@ -4276,7 +4277,7 @@ fun MailComposeScreen(
                             draft.toLabel.ifBlank {
                                 draft.toAddress
                             },
-                        color = AccentOrange,
+                        color = CascadeColors.Ink,
                         fontSize = 9.sp,
                         lineHeight = 11.sp,
                         fontFamily = InterfaceFont,
@@ -4287,7 +4288,7 @@ fun MailComposeScreen(
                             Modifier
                                 .widthIn(max = 150.dp)
                                 .background(
-                                    AccentOrange.copy(alpha = 0.10f),
+                                    CascadeColors.Ink.copy(alpha = 0.10f),
                                     RoundedCornerShape(999.dp)
                                 )
                                 .padding(
@@ -4309,7 +4310,7 @@ fun MailComposeScreen(
 
                         Text(
                             text = draft.toAddress,
-                            color = TertiaryText,
+                            color = CascadeColors.Ink.copy(alpha = 0.5f),
                             fontSize = 8.5.sp,
                             fontFamily = InterfaceFont,
                             maxLines = 1,
@@ -4320,7 +4321,13 @@ fun MailComposeScreen(
                 }
             }
 
-            DaylightRowDivider()
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(0.75.dp)
+                        .background(CascadeColors.Ink.copy(alpha = 0.15f))
+            )
 
             Row(
                 modifier =
@@ -4334,7 +4341,7 @@ fun MailComposeScreen(
 
                 Text(
                     text = "Subject",
-                    color = SecondaryText,
+                    color = CascadeColors.Ink.copy(alpha = 0.72f),
                     fontSize = 9.sp,
                     fontFamily = InterfaceFont,
                     maxLines = 1,
@@ -4355,14 +4362,14 @@ fun MailComposeScreen(
                     singleLine = true,
                     textStyle =
                         TextStyle(
-                            color = PrimaryText,
+                            color = CascadeColors.Ink,
                             fontSize = 10.5.sp,
                             fontFamily = InterfaceFont,
                             fontWeight = FontWeight.SemiBold
                         ),
                     cursorBrush =
                         SolidColor(
-                            AccentOrange
+                            CascadeColors.Ink
                         ),
                     modifier =
                         Modifier
@@ -4407,7 +4414,13 @@ fun MailComposeScreen(
                 )
             }
 
-            DaylightRowDivider()
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(0.75.dp)
+                        .background(CascadeColors.Ink.copy(alpha = 0.15f))
+            )
 
             if (
                 draft.isForward &&
@@ -4416,7 +4429,7 @@ fun MailComposeScreen(
 
                 Text(
                     text = "Original message included",
-                    color = TertiaryText,
+                    color = CascadeColors.Ink.copy(alpha = 0.5f),
                     fontSize = 8.sp,
                     fontFamily = InterfaceFont,
                     modifier = Modifier.padding(top = 6.dp)
@@ -4439,14 +4452,14 @@ fun MailComposeScreen(
                     },
                     textStyle =
                         TextStyle(
-                            color = PrimaryText,
+                            color = CascadeColors.Ink,
                             fontSize = 10.5.sp,
                             fontFamily = InterfaceFont,
                             lineHeight = 15.5.sp
                         ),
                     cursorBrush =
                         SolidColor(
-                            AccentOrange
+                            CascadeColors.Ink
                         ),
                     modifier =
                         Modifier
@@ -4542,7 +4555,7 @@ fun MailComposeScreen(
                             shape = RoundedCornerShape(12.dp)
                         )
                         .background(
-                            AccentOrange,
+                            CascadeColors.Mail,
                             RoundedCornerShape(12.dp)
                         )
                         .focusRequester(
@@ -4612,7 +4625,7 @@ fun MailComposeScreen(
 
                 Text(
                     text = "Send",
-                    color = BackgroundBlack,
+                    color = CascadeColors.Ink,
                     fontSize = 10.5.sp,
                     fontFamily = InterfaceFont,
                     fontWeight = FontWeight.SemiBold
@@ -4621,7 +4634,7 @@ fun MailComposeScreen(
                 Icon(
                     imageVector = Icons.Outlined.ArrowUpward,
                     contentDescription = null,
-                    tint = BackgroundBlack,
+                    tint = CascadeColors.Ink,
                     modifier = Modifier.size(12.dp)
                 )
             }
