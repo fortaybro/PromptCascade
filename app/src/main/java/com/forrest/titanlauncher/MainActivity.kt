@@ -6074,19 +6074,43 @@ fun TitanApp(
             useGlobalCommandLayer
         ) {
 
-            RenderHomeScreen(
-                commandOverlayOnly =
-                    true,
-                autoFocusCommandInput =
-                    !preserveEditorTypingFocus,
-                onCommandOverlayActiveChange = {
-                        active ->
+            /*
+             * This prompt sits over Settings, Hub, Notes and the like,
+             * so it is the one that takes a command handed over from
+             * Settings ("calendarsetup"...). See PendingPromptCommand.
+             */
+            CompositionLocalProvider(
+                LocalPromptTakesPendingCommand provides true
+            ) {
+                RenderHomeScreen(
+                    commandOverlayOnly =
+                        true,
+                    autoFocusCommandInput =
+                        !preserveEditorTypingFocus,
+                    onCommandOverlayActiveChange = {
+                            active ->
 
-                    globalCommandOverlayActive =
-                        active
-                }
-            )
+                        globalCommandOverlayActive =
+                            active
+                    }
+                )
+            }
         }
+
+        /*
+         * Missed calls: keeps the ⚡ current, and on the home screen
+         * shows the missed-call card you have to clear (MissedCalls.kt).
+         */
+        MissedCallsLayer(
+            showAlert =
+                !useGlobalCommandLayer,
+            homeRequestVersion =
+                homeRequestVersion,
+            onStatus = {
+                statusText =
+                    it
+            }
+        )
     }
 }
 

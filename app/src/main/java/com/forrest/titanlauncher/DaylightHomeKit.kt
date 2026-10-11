@@ -1,5 +1,6 @@
 package com.forrest.titanlauncher
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -68,20 +69,51 @@ internal fun DaylightQuickReplyPill(
     onClick: () -> Unit
 ) {
 
+    /*
+     * A missed call turns the bolt fire-coloured and pulsing until it
+     * is dealt with in quick reply (see MissedCalls.kt).
+     */
+    val missed =
+        MissedCallsWaiting.size
+
+    val total =
+        waiting + missed
+
+    val pulse =
+        androidx.compose.animation.core.rememberInfiniteTransition(
+            label = "missedCallPulse"
+        )
+
+    val pulseAlpha by
+    pulse.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec =
+            androidx.compose.animation.core.infiniteRepeatable(
+                animation = androidx.compose.animation.core.tween(700),
+                repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+            ),
+        label = "missedCallPulseAlpha"
+    )
+
     val tint =
-        if (waiting > 0) AccentOrange else PrimaryText
+        when {
+            missed > 0 -> MissedCallFire
+            waiting > 0 -> AccentOrange
+            else -> PrimaryText
+        }
 
     Row(
         modifier =
             Modifier
                 .height(HeaderButtonSize)
                 .background(
-                    SurfaceBlack,
+                    if (missed > 0) MissedCallFire.copy(alpha = 0.16f * pulseAlpha) else SurfaceBlack,
                     RoundedCornerShape(999.dp)
                 )
                 .border(
-                    0.8.dp,
-                    BorderGray,
+                    if (missed > 0) 1.2.dp else 0.8.dp,
+                    if (missed > 0) MissedCallFire.copy(alpha = pulseAlpha) else BorderGray,
                     RoundedCornerShape(999.dp)
                 )
                 .clip(RoundedCornerShape(999.dp))
@@ -94,16 +126,21 @@ internal fun DaylightQuickReplyPill(
         Icon(
             imageVector = Icons.Outlined.Bolt,
             contentDescription =
-                if (waiting > 0) "quick reply, $waiting waiting" else "quick reply",
-            tint = tint,
+                when {
+                    missed > 0 -> "quick reply, missed call"
+                    waiting > 0 -> "quick reply, $waiting waiting"
+                    else -> "quick reply"
+                },
+            tint =
+                if (missed > 0) tint.copy(alpha = pulseAlpha) else tint,
             modifier = Modifier.size(HeaderIconSize)
         )
 
         if (
-            waiting > 0
+            total > 0
         ) {
             Text(
-                text = waiting.toString(),
+                text = total.toString(),
                 color = tint,
                 fontSize = 11.sp,
                 lineHeight = 12.sp,

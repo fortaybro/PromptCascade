@@ -468,8 +468,13 @@ fun TitanHomeScreen(
         )
     }
 
+    /*
+     * target: where the search went ("chrome" or "claude"), so tapping
+     * it later runs it there again.
+     */
     fun saveRecentWebSearch(
-        query: String
+        query: String,
+        target: String = "chrome"
     ) {
 
         val cleaned =
@@ -521,11 +526,28 @@ fun TitanHomeScreen(
             )
         }
 
+        editor.putString(
+            "recent_search_target_${cleaned.hashCode()}",
+            target
+        )
+
         editor.apply()
 
         recentWebSearches =
             updated
     }
+
+    /*
+     * Where a recent search was made. Searches saved before this was
+     * remembered were all Chrome searches.
+     */
+    fun recentSearchTarget(
+        query: String
+    ): String =
+        recentSearchPrefs.getString(
+            "recent_search_target_${query.hashCode()}",
+            "chrome"
+        ) ?: "chrome"
 
     fun removeRecentWebSearch(
         query: String
@@ -1874,7 +1896,8 @@ fun TitanHomeScreen(
         }
 
         saveRecentWebSearch(
-            cleaned
+            cleaned,
+            "claude"
         )
 
         val shared =
@@ -5825,7 +5848,8 @@ fun TitanHomeScreen(
                                  * opening an empty card.
                                  */
                                 if (
-                                    quickReplyWaiting > 0
+                                    quickReplyWaiting > 0 ||
+                                    MissedCallsWaiting.isNotEmpty()
                                 ) {
                                     showQuickReply =
                                         true
@@ -6424,23 +6448,27 @@ fun TitanHomeScreen(
                     RecentSearchesCard(
                         searches =
                             recentWebSearches,
+                        /*
+                         * Runs the search again where it was made
+                         * (Chrome or Claude) instead of copying it
+                         * into the prompt.
+                         */
                         onSearchSelected = {
                                 query ->
 
                             commandText =
-                                query
+                                ""
 
-                            inlineContactSelectionIndex =
-                                0
-
-                            scope.launch {
-
-                                delay(
-                                    20
+                            if (
+                                recentSearchTarget(query) == "claude"
+                            ) {
+                                openClaudeQuery(
+                                    query
                                 )
-
-                                focusRequester
-                                    .requestFocus()
+                            } else {
+                                openChromeWebSearch(
+                                    query
+                                )
                             }
                         },
                         onRemoveSearch = {
@@ -11812,6 +11840,26 @@ private fun DaylightPromptContextContent(
     }
 }
 
+/*
+ * A command to put in the prompt, e.g. "calendarsetup" tapped in
+ * Settings. The prompt over Settings takes it and clears it, so the
+ * command runs on top of Settings and you stay there afterwards.
+ */
+internal var PendingPromptCommand by
+mutableStateOf<String?>(
+    null
+)
+
+/*
+ * True only for the prompt layer drawn over Settings and other
+ * screens, so the hidden home screen behind it never takes the
+ * command instead.
+ */
+internal val LocalPromptTakesPendingCommand =
+    androidx.compose.runtime.staticCompositionLocalOf {
+        false
+    }
+
 @Composable
 fun CommandBar(
     commandText: String,
@@ -11864,6 +11912,53 @@ fun CommandBar(
                             commandText.length
                         )
                 )
+        }
+    }
+
+    /*
+     * A command handed over from elsewhere (Settings → "Set up by
+     * typing in the prompt"): fill the prompt with it and focus it,
+     * so Enter runs it. Taken once, then cleared.
+     */
+    val pendingCommand =
+        if (LocalPromptTakesPendingCommand.current) {
+            PendingPromptCommand
+        } else {
+            null
+        }
+
+    LaunchedEffect(
+        pendingCommand
+    ) {
+
+        if (
+            pendingCommand != null
+        ) {
+
+            PendingPromptCommand =
+                null
+
+            onCommandTextChange(
+                pendingCommand
+            )
+
+            commandFieldValue =
+                TextFieldValue(
+                    text =
+                        pendingCommand,
+                    selection =
+                        TextRange(
+                            pendingCommand.length
+                        )
+                )
+
+            delay(
+                120
+            )
+
+            runCatching {
+                focusRequester.requestFocus()
+            }
         }
     }
 
@@ -12297,10 +12392,18 @@ private fun SearchTargetChip(
 
 
 /*
- * Rows the apps panel shows. Sized to fit inside the command legend's
- * footprint, which the panel covers.
+ * How many matching apps the apps search keeps. The panel shows
+ * PromptAppListVisibleRows of them at a time and scrolls for the rest.
  */
-internal const val PromptAppListRows = 4
+internal const val PromptAppListRows = 60
+
+/*
+ * Rows visible at once in the apps panel, so it never runs off the
+ * screen; keep typing to narrow, or scroll.
+ */
+internal const val PromptAppListVisibleRows = 3
+
+private val PromptAppRowHeight = 27.dp
 
 /*
  * True for text that is not a symbol command ("@", "/", ".", ...) and
@@ -12484,116 +12587,163 @@ private fun PromptAppListPanel(
             )
         }
 
-        apps.forEachIndexed { index, app ->
+        /*
+         * Three rows at a time; the rest scroll. Arrow keys keep the
+         * highlighted app in view.
+         */
+        val appListState =
+            rememberLazyListState()
 
-            val selected =
-                index == selectedIndex
-
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(
-                            min = 25.dp
-                        )
-                        .background(
-                            if (
-                                selected
-                            ) {
-                                HomeCommandSurface.copy(
-                                    alpha = 0.78f
-                                )
-                            } else {
-                                Color.Transparent
-                            },
-                            RoundedCornerShape(
-                                7.dp
-                            )
-                        )
-                        .clickable {
-                            onChooseApp(
-                                app
-                            )
-                        }
-                        .padding(
-                            horizontal = 6.dp,
-                            vertical = 3.dp
-                        ),
-                verticalAlignment =
-                    Alignment.CenterVertically
+        LaunchedEffect(
+            selectedIndex,
+            apps.size
+        ) {
+            if (
+                apps.isNotEmpty()
             ) {
+                val first =
+                    appListState.firstVisibleItemIndex
 
-                Text(
-                    text =
-                        if (
-                            selected
-                        ) {
-                            ">"
-                        } else {
-                            " "
-                        },
-                    color =
-                        AccentOrange,
-                    fontSize =
-                        9.sp,
-                    fontFamily =
-                        InterfaceFont,
-                    fontWeight =
-                        FontWeight.Bold,
-                    modifier =
-                        Modifier.width(
-                            14.dp
-                        )
-                )
-
-                Text(
-                    text =
-                        app.label.lowercase(),
-                    color =
-                        PrimaryText,
-                    fontSize =
-                        9.5.sp,
-                    lineHeight =
-                        10.sp,
-                    fontFamily =
-                        InterfaceFont,
-                    maxLines =
-                        1,
-                    overflow =
-                        TextOverflow.Ellipsis,
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        )
-                )
-
-                val appIcon =
-                    rememberAppIconBitmap(
-                        app.packageName
-                    )
-
-                if (
-                    appIcon != null
+                if (selectedIndex < first) {
+                    appListState.animateScrollToItem(selectedIndex)
+                } else if (
+                    selectedIndex >= first + PromptAppListVisibleRows
                 ) {
-
-                    Spacer(
-                        modifier =
-                            Modifier.width(
-                                6.dp
-                            )
-                    )
-
-                    Image(
-                        bitmap =
-                            appIcon,
-                        contentDescription =
-                            app.label,
-                        modifier =
-                            Modifier.size(
-                                16.dp
-                            )
+                    appListState.animateScrollToItem(
+                        (selectedIndex - PromptAppListVisibleRows + 1).coerceAtLeast(0)
                     )
                 }
+            }
+        }
+
+        LazyColumn(
+            state =
+                appListState,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(
+                        max =
+                            PromptAppRowHeight * PromptAppListVisibleRows
+                    )
+        ) {
+            itemsIndexed(
+                items =
+                    apps,
+                key = { index, app ->
+                    app.packageName + "#" + index
+                }
+            ) { index, app ->
+
+                    val selected =
+                        index == selectedIndex
+
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(
+                                    PromptAppRowHeight
+                                )
+                                .background(
+                                    if (
+                                        selected
+                                    ) {
+                                        HomeCommandSurface.copy(
+                                            alpha = 0.78f
+                                        )
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                    RoundedCornerShape(
+                                        7.dp
+                                    )
+                                )
+                                .clickable {
+                                    onChooseApp(
+                                        app
+                                    )
+                                }
+                                .padding(
+                                    horizontal = 6.dp,
+                                    vertical = 3.dp
+                                ),
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+
+                        Text(
+                            text =
+                                if (
+                                    selected
+                                ) {
+                                    ">"
+                                } else {
+                                    " "
+                                },
+                            color =
+                                AccentOrange,
+                            fontSize =
+                                9.sp,
+                            fontFamily =
+                                InterfaceFont,
+                            fontWeight =
+                                FontWeight.Bold,
+                            modifier =
+                                Modifier.width(
+                                    14.dp
+                                )
+                        )
+
+                        Text(
+                            text =
+                                app.label.lowercase(),
+                            color =
+                                PrimaryText,
+                            fontSize =
+                                9.5.sp,
+                            lineHeight =
+                                10.sp,
+                            fontFamily =
+                                InterfaceFont,
+                            maxLines =
+                                1,
+                            overflow =
+                                TextOverflow.Ellipsis,
+                            modifier =
+                                Modifier.weight(
+                                    1f
+                                )
+                        )
+
+                        val appIcon =
+                            rememberAppIconBitmap(
+                                app.packageName
+                            )
+
+                        if (
+                            appIcon != null
+                        ) {
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(
+                                        6.dp
+                                    )
+                            )
+
+                            Image(
+                                bitmap =
+                                    appIcon,
+                                contentDescription =
+                                    app.label,
+                                modifier =
+                                    Modifier.size(
+                                        16.dp
+                                    )
+                            )
+                        }
+                    }
             }
         }
     }

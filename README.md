@@ -2,7 +2,16 @@
 
 A keyboard-first Android home screen. Type what you want, press Enter, and it happens. Built for phones with a physical keyboard, developed on the Unihertz Titan 2 Elite.
 
-> **Status:** 2.1.2. Sideloaded release (not on Google Play). Expect rough edges and please report them with the `bug` command.
+> **Status:** 2.2.0. Sideloaded release (not on Google Play). Expect rough edges and please report them with the `bug` command.
+
+## What's new in 2.2
+
+- **Missed calls you can't miss:** a missed call turns ⚡ fire-orange and pulsing, and home shows a missed-call card you clear with ✕ or Home. From there or from quick reply: **Call**, **Text**, or **Reminder** (a "CALL name" alarm in your Clock app, or a calendar alert for later dates).
+- **Quick reply, list first:** ⚡ opens on a compact list of everyone waiting; tap a person to open the conversation. ✕, Back or Esc return to the list.
+- **Pictures in quick reply:** photos people send you show right in the conversation.
+- **App search** shows three apps at a time; scroll for more or keep typing.
+- **Recent searches** run again in Chrome or Claude, wherever you first searched.
+- **Settings:** tap a setup command (calendarsetup, weathersetup...) to run it over Settings, and the on-screen keyboard switch works without leaving the page.
 
 ## What's new in 2.1.2
 

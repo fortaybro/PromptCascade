@@ -1,5 +1,7 @@
 package com.forrest.titanlauncher
 
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.graphics.asImageBitmap
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
@@ -428,18 +430,28 @@ internal fun QuickReplyOverlay(
         rememberMessageSounds()
 
     /*
-     * Daylight opens straight into the newest conversation, with the
-     * people strip above it for switching. Back returns to the list.
+     * Opens on the compact list of everyone waiting. Tapping one opens
+     * that conversation with the reply field; Back returns to the list.
      */
     var selectedEntry by remember {
         mutableStateOf<QuickReplyEntry?>(
-            entries.firstOrNull()
+            null
         )
     }
 
     var replyText by remember {
         mutableStateOf(
             ""
+        )
+    }
+
+    /*
+     * A missed call opened from the list: its card with Call back,
+     * Text and Remind me.
+     */
+    var selectedMissedCall by remember {
+        mutableStateOf<MissedCall?>(
+            null
         )
     }
 
@@ -487,6 +499,9 @@ internal fun QuickReplyOverlay(
     fun closeReply() {
 
         selectedEntry =
+            null
+
+        selectedMissedCall =
             null
 
         replyText =
@@ -720,7 +735,8 @@ internal fun QuickReplyOverlay(
     BackHandler {
 
         if (
-            selectedEntry != null
+            selectedEntry != null ||
+            selectedMissedCall != null
         ) {
             closeReply()
         } else {
@@ -771,7 +787,8 @@ internal fun QuickReplyOverlay(
                         ) {
 
                             if (
-                                selectedEntry != null
+                                selectedEntry != null ||
+                                selectedMissedCall != null
                             ) {
                                 closeReply()
                             } else {
@@ -795,7 +812,118 @@ internal fun QuickReplyOverlay(
             val activeEntry =
                 selectedEntry
 
+            val activeMissedCall =
+                selectedMissedCall
+
             if (
+                activeEntry == null &&
+                activeMissedCall != null
+            ) {
+
+                /*
+                 * MISSED CALL CARD: ✕ goes back to the list.
+                 */
+                /*
+                 * Dropped below the Titan's top-left camera so the
+                 * avatar isn't clipped.
+                 */
+                androidx.compose.foundation.layout.Box(
+                    modifier =
+                        Modifier.padding(
+                            start = QuickReplyPageGutter,
+                            end = QuickReplyPageGutter,
+                            top = 30.dp
+                        )
+                ) {
+                    MissedCallActionsCard(
+                        call =
+                            activeMissedCall,
+                        onCallBack = {
+                            MissedCallStore.markHandled(
+                                context,
+                                activeMissedCall
+                            )
+                            closeReply()
+                            onDismiss()
+                            dialMissedCall(
+                                context,
+                                activeMissedCall
+                            )
+                        },
+                        onText = {
+                            MissedCallStore.markHandled(
+                                context,
+                                activeMissedCall
+                            )
+
+                            /*
+                             * Write the text right here, like any
+                             * other quick reply.
+                             */
+                            selectEntry(
+                                QuickReplyEntry(
+                                    id =
+                                        "missed-call:" + activeMissedCall.id,
+                                    title =
+                                        activeMissedCall.name,
+                                    preview =
+                                        "📞 Missed call",
+                                    timestamp =
+                                        activeMissedCall.timestamp,
+                                    isMessage =
+                                        true,
+                                    phoneNumber =
+                                        activeMissedCall.number
+                                )
+                            )
+
+                            selectedMissedCall =
+                                null
+                        },
+                        onRemind = {
+                            pickCallBackTime(
+                                context
+                            ) { millis ->
+
+                                val result =
+                                    scheduleCallBack(
+                                        context,
+                                        activeMissedCall,
+                                        millis
+                                    )
+
+                                if (
+                                    result.startsWith("✓")
+                                ) {
+                                    closeReply()
+                                    onStatus(result)
+                                    onDismiss()
+                                } else {
+                                    notice =
+                                        result.lowercase()
+                                }
+                            }
+                        },
+                        onClose = {
+                            closeReply()
+                        }
+                    )
+                }
+
+                if (
+                    notice.isNotBlank()
+                ) {
+                    QuickReplyNotice(
+                        text =
+                            notice,
+                        modifier =
+                            Modifier.padding(
+                                horizontal = QuickReplyPageGutter
+                            )
+                    )
+                }
+
+            } else if (
                 activeEntry == null
             ) {
 
@@ -823,6 +951,152 @@ internal fun QuickReplyOverlay(
                             )
                 )
 
+                /*
+                 * Missed calls first, in fire colour. Tap one for Call
+                 * back / Text / Remind me; ✕ clears it.
+                 */
+                val missedCalls =
+                    MissedCallsWaiting
+
+                if (
+                    missedCalls.isNotEmpty()
+                ) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .padding(
+                                    horizontal = QuickReplyPageGutter
+                                )
+                                .fillMaxWidth()
+                                .background(
+                                    SurfaceBlack,
+                                    RoundedCornerShape(
+                                        QuickReplyCardRadius
+                                    )
+                                )
+                    ) {
+                        missedCalls.forEachIndexed { index, call ->
+
+                            if (
+                                index > 0
+                            ) {
+                                Box(
+                                    modifier =
+                                        Modifier.padding(
+                                            horizontal = QuickReplyCardPadding
+                                        )
+                                ) {
+                                    DaylightRowDivider()
+                                }
+                            }
+
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            notice =
+                                                ""
+
+                                            selectedMissedCall =
+                                                call
+                                        }
+                                        .padding(
+                                            horizontal = QuickReplyCardPadding,
+                                            vertical = 9.dp
+                                        ),
+                                verticalAlignment =
+                                    Alignment.CenterVertically,
+                                horizontalArrangement =
+                                    Arrangement.spacedBy(
+                                        10.dp
+                                    )
+                            ) {
+
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .size(
+                                                QuickReplyAvatarSize.dp
+                                            )
+                                            .background(
+                                                MissedCallFire.copy(alpha = 0.18f),
+                                                CircleShape
+                                            ),
+                                    contentAlignment =
+                                        Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "📞",
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                Column(
+                                    modifier =
+                                        Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text =
+                                            call.name,
+                                        color =
+                                            PrimaryText,
+                                        fontSize =
+                                            11.sp,
+                                        lineHeight =
+                                            13.sp,
+                                        fontFamily =
+                                            InterfaceFont,
+                                        fontWeight =
+                                            FontWeight.SemiBold,
+                                        maxLines =
+                                            1,
+                                        overflow =
+                                            TextOverflow.Ellipsis
+                                    )
+
+                                    Text(
+                                        text =
+                                            "Missed call",
+                                        color =
+                                            MissedCallFire,
+                                        fontSize =
+                                            9.sp,
+                                        lineHeight =
+                                            11.sp,
+                                        fontFamily =
+                                            InterfaceFont
+                                    )
+                                }
+
+                                Text(
+                                    text =
+                                        "✕",
+                                    color =
+                                        SecondaryText,
+                                    fontSize =
+                                        10.sp,
+                                    fontFamily =
+                                        InterfaceFont,
+                                    modifier =
+                                        Modifier
+                                            .clickable {
+                                                MissedCallStore.markHandled(
+                                                    context,
+                                                    call
+                                                )
+                                            }
+                                            .padding(6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (
+                    entries.isNotEmpty() ||
+                    missedCalls.isEmpty()
+                )
                 Column(
                     modifier =
                         Modifier
@@ -1032,9 +1306,12 @@ internal fun QuickReplyOverlay(
                                     activeEntry
                                 )
                             },
+                            /*
+                             * X goes back to the list of everyone
+                             * waiting, not all the way home.
+                             */
                             onClose = {
                                 closeReply()
-                                onDismiss()
                             }
                         )
 
@@ -1633,23 +1910,205 @@ private fun QuickReplyBubbles(
                             )
                         }
 
-                        Text(
-                            text =
-                                message.text,
-                            color =
-                                if (outgoing) BackgroundBlack else PrimaryText,
-                            fontSize =
-                                10.sp,
-                            lineHeight =
-                                13.sp,
-                            fontFamily =
-                                InterfaceFont
-                        )
+                        /*
+                         * Pictures first, like a messaging app. If
+                         * one shows, the "📷 Photo" stand-in text is
+                         * dropped; if none can be opened, the text
+                         * stays so the message isn't blank.
+                         */
+                        val picturesShown =
+                            QuickReplyPictures(
+                                uris =
+                                    message.imageUris
+                            )
+
+                        val caption =
+                            if (picturesShown) {
+                                message.text
+                                    .lines()
+                                    .filterNot {
+                                        val line = it.trim().lowercase()
+                                        line.startsWith("📷") ||
+                                                line in setOf(
+                                            "image", "photo", "picture",
+                                            "sent an image", "sent a photo", "sent a picture"
+                                        )
+                                    }
+                                    .joinToString("\n")
+                                    .trim()
+                            } else {
+                                message.text
+                            }
+
+                        if (
+                            caption.isNotBlank()
+                        ) {
+                            Text(
+                                text =
+                                    caption,
+                                color =
+                                    if (outgoing) BackgroundBlack else PrimaryText,
+                                fontSize =
+                                    10.sp,
+                                lineHeight =
+                                    13.sp,
+                                fontFamily =
+                                    InterfaceFont,
+                                modifier =
+                                    if (picturesShown) {
+                                        Modifier.padding(top = 5.dp)
+                                    } else {
+                                        Modifier
+                                    }
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+
+/*
+ * PICTURES IN QUICK REPLY
+ *
+ * Decoded off the main thread, scaled down to thumbnail size and
+ * kept in a small memory cache, so scrolling the conversation and the
+ * five-second refresh don't decode them again.
+ */
+private val QuickReplyPictureCache =
+    object : android.util.LruCache<String, android.graphics.Bitmap>(
+        12 * 1024 * 1024
+    ) {
+        override fun sizeOf(
+            key: String,
+            value: android.graphics.Bitmap
+        ): Int =
+            value.byteCount
+    }
+
+private fun loadQuickReplyPicture(
+    context: android.content.Context,
+    uri: String,
+    maxSide: Int = 720
+): android.graphics.Bitmap? {
+
+    QuickReplyPictureCache.get(uri)?.let { return it }
+
+    return runCatching {
+
+        val parsed =
+            android.net.Uri.parse(uri)
+
+        val bounds =
+            android.graphics.BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+
+        context.contentResolver
+            .openInputStream(parsed)
+            ?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+            }
+
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return@runCatching null
+        }
+
+        var sample = 1
+        while (
+            bounds.outWidth / (sample * 2) >= maxSide ||
+            bounds.outHeight / (sample * 2) >= maxSide
+        ) {
+            sample *= 2
+        }
+
+        context.contentResolver
+            .openInputStream(parsed)
+            ?.use {
+                android.graphics.BitmapFactory.decodeStream(
+                    it,
+                    null,
+                    android.graphics.BitmapFactory.Options().apply {
+                        inSampleSize = sample
+                    }
+                )
+            }
+    }
+        .getOrNull()
+        ?.also {
+            QuickReplyPictureCache.put(uri, it)
+        }
+}
+
+/*
+ * The message's pictures, stacked. Returns whether any could be
+ * shown (a notification's image may not be readable by Prompt).
+ */
+@Composable
+private fun QuickReplyPictures(
+    uris: List<String>
+): Boolean {
+
+    if (uris.isEmpty()) {
+        return false
+    }
+
+    val context =
+        LocalContext.current
+
+    val bitmaps by
+    produceState(
+        initialValue =
+            uris.mapNotNull { QuickReplyPictureCache.get(it) },
+        uris
+    ) {
+        value =
+            withContext(
+                Dispatchers.IO
+            ) {
+                uris.mapNotNull { uri ->
+                    loadQuickReplyPicture(context, uri)
+                }
+            }
+    }
+
+    if (bitmaps.isEmpty()) {
+        return false
+    }
+
+    Column(
+        verticalArrangement =
+            Arrangement.spacedBy(4.dp)
+    ) {
+        bitmaps.forEach { bitmap ->
+
+            val ratio =
+                (bitmap.width.toFloat() / bitmap.height.toFloat())
+                    .coerceIn(0.5f, 2f)
+
+            Image(
+                bitmap =
+                    bitmap.asImageBitmap(),
+                contentDescription =
+                    "Picture",
+                contentScale =
+                    ContentScale.Crop,
+                modifier =
+                    Modifier
+                        .widthIn(max = 180.dp)
+                        .fillMaxWidth()
+                        .aspectRatio(ratio)
+                        .heightIn(max = 220.dp)
+                        .clip(
+                            RoundedCornerShape(9.dp)
+                        )
+            )
+        }
+    }
+
+    return true
 }
 
 

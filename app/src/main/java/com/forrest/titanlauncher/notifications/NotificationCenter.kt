@@ -25,7 +25,13 @@ data class NotificationMessage(
     val sender: String,
     val text: String,
     val timestamp: Long,
-    val fromUser: Boolean
+    val fromUser: Boolean,
+    /*
+     * Pictures in the message (content:// URIs): MMS image parts, or
+     * an image a messaging app attached to its notification. Quick
+     * reply shows them; empty for plain text.
+     */
+    val imageUris: List<String> = emptyList()
 )
 
 
@@ -889,6 +895,18 @@ object NotificationCenter {
                     ?.messages
                     ?.map { message ->
 
+                        /*
+                         * A picture sent in a chat comes with its
+                         * own image URI on the message.
+                         */
+                        val image =
+                            message.dataUri
+                                ?.takeIf {
+                                    message.dataMimeType
+                                        ?.startsWith("image/") == true
+                                }
+                                ?.toString()
+
                         NotificationMessage(
                             sender =
                                 message
@@ -900,12 +918,19 @@ object NotificationCenter {
                                 message
                                     .text
                                     ?.toString()
-                                    .orEmpty(),
+                                    .orEmpty()
+                                    .ifBlank {
+                                        if (image != null) "📷 Photo" else ""
+                                    },
                             timestamp =
                                 message.timestamp,
                             fromUser =
                                 isFromUser(
                                     message.person
+                                ),
+                            imageUris =
+                                listOfNotNull(
+                                    image
                                 )
                         )
                     }

@@ -335,6 +335,37 @@ internal fun numbersForTitle(
 }
 
 /*
+ * A picture with no words arrives as "📷 Photo" from the text store
+ * but "Image", "Photo" or "Sent a photo" (and a different timestamp)
+ * from the messaging app's notification. Those count as the same
+ * message, so a picture shows once, not twice.
+ */
+private fun isPictureOnly(
+    message: NotificationMessage
+): Boolean {
+
+    val text =
+        message.text.trim().lowercase()
+
+    return message.imageUris.isNotEmpty() && text.isBlank() ||
+            text.startsWith("📷") ||
+            text in setOf("image", "photo", "picture", "sent an image", "sent a photo", "sent a picture")
+}
+
+private fun sameMessage(
+    a: NotificationMessage,
+    b: NotificationMessage
+): Boolean {
+
+    if (a.fromUser != b.fromUser) return false
+
+    if (abs(a.timestamp - b.timestamp) >= 3 * 60 * 1000L) return false
+
+    return a.text.trim() == b.text.trim() ||
+            (isPictureOnly(a) && isPictureOnly(b))
+}
+
+/*
  * The notification's messages plus the stored history, without the
  * same text showing twice. When both have a message, the
  * notification's copy is kept, since it carries the sender's name.
@@ -353,13 +384,36 @@ internal fun mergeThreadHistory(
     val extra =
         history.filter { stored ->
             fromNotification.none { shown ->
-                shown.fromUser == stored.fromUser &&
-                        shown.text.trim() == stored.text.trim() &&
-                        abs(shown.timestamp - stored.timestamp) < 3 * 60 * 1000L
+                sameMessage(shown, stored)
             }
         }
 
-    return (fromNotification + extra)
+    /*
+     * The same message in both lists: keep the notification's copy,
+     * but take the stored copy's pictures when it has them (an MMS
+     * image Prompt can open beats a notification image it may not be
+     * allowed to read).
+     */
+    val shownWithPictures =
+        fromNotification.map { shown ->
+
+            val stored =
+                history.firstOrNull { stored ->
+                    stored.imageUris.isNotEmpty() &&
+                            sameMessage(shown, stored)
+                }
+
+            if (stored != null) {
+                shown.copy(
+                    imageUris =
+                        (stored.imageUris + shown.imageUris).distinct()
+                )
+            } else {
+                shown
+            }
+        }
+
+    return (shownWithPictures + extra)
         .sortedBy {
             it.timestamp
         }

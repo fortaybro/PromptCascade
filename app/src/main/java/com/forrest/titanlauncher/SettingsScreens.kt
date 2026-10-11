@@ -755,11 +755,21 @@ internal fun SettingsMainScreen(
             text = "SET UP BY TYPING IN THE PROMPT"
         )
 
+        /*
+         * Tap a command: the prompt opens over Settings with it typed
+         * in. Enter runs it, and you're still in Settings after.
+         */
+        val runCommand: (String) -> Unit = { command ->
+            PendingPromptCommand =
+                command
+        }
+
         SettingsCardGroup {
             SettingsCommandRow(
                 title = "Calendar",
                 detail = "Phone or Google calendar",
-                command = "calendarsetup"
+                command = "calendarsetup",
+                onRun = runCommand
             )
 
             DaylightRowDivider()
@@ -767,7 +777,8 @@ internal fun SettingsMainScreen(
             SettingsCommandRow(
                 title = "Weather",
                 detail = "Location for the forecast",
-                command = "weathersetup"
+                command = "weathersetup",
+                onRun = runCommand
             )
 
             DaylightRowDivider()
@@ -775,7 +786,8 @@ internal fun SettingsMainScreen(
             SettingsCommandRow(
                 title = "Assist",
                 detail = "Gemini key & what it may read",
-                command = "geminisetup"
+                command = "geminisetup",
+                onRun = runCommand
             )
 
             DaylightRowDivider()
@@ -783,7 +795,8 @@ internal fun SettingsMainScreen(
             SettingsCommandRow(
                 title = "To-dos",
                 detail = "Google Tasks or Todoist",
-                command = "taskssetup"
+                command = "taskssetup",
+                onRun = runCommand
             )
 
             DaylightRowDivider()
@@ -791,7 +804,8 @@ internal fun SettingsMainScreen(
             SettingsCommandRow(
                 title = "Screen time",
                 detail = "Usage access for the ring",
-                command = "usagesetup"
+                command = "usagesetup",
+                onRun = runCommand
             )
         }
 
@@ -1918,8 +1932,8 @@ internal fun HomeScreenSettingsScreen(
 
             /*
              * Lets Android's keyboard app in (on-screen keyboard,
-             * voice, other languages). Restarts the screen so every
-             * text field picks it up. See PromptKeyboard.kt.
+             * voice, other languages). Takes effect right away, the
+             * next time a text field is tapped. See PromptKeyboard.kt.
              */
             val keyboardContext =
                 LocalContext.current
@@ -1943,9 +1957,11 @@ internal fun HomeScreenSettingsScreen(
                     useKeyboardApp =
                         enabled
 
-                    keyboardContext
-                        .findHostActivity()
-                        ?.recreate()
+                    /*
+                     * Live: no restart, so you stay on this page.
+                     */
+                    KeyboardAppAllowed =
+                        enabled
                 }
             )
 
@@ -2760,17 +2776,23 @@ internal fun SettingsRadioMark(
 
 /*
  * A setting that lives behind a prompt command: what it is, and the
- * command to type, shown in the accent colour.
+ * command to type, shown in the accent colour. Tapping it puts the
+ * command in the prompt over Settings, ready for Enter.
  */
 @Composable
 internal fun SettingsCommandRow(
     title: String,
     detail: String,
-    command: String
+    command: String,
+    onRun: ((String) -> Unit)? = null
 ) {
     SettingsRow(
         title = title,
-        detail = detail
+        detail = detail,
+        onClick =
+            onRun?.let { run ->
+                { run(command) }
+            }
     ) {
         Text(
             text = command,

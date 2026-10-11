@@ -150,6 +150,53 @@ private fun cachedMmsText(
             }
         }
 
+private val mmsImageCache =
+    java.util.concurrent.ConcurrentHashMap<Long, List<String>>()
+
+/*
+ * The picture parts of one MMS, as content://mms/part/<id> URIs that
+ * quick reply can open (Prompt holds the SMS permission).
+ */
+internal fun cachedMmsImages(
+    context: Context,
+    messageId: Long
+): List<String> =
+    mmsImageCache[messageId]
+        ?: runCatching {
+            val found =
+                mutableListOf<String>()
+
+            context.contentResolver
+                .query(
+                    MmsPartUri,
+                    arrayOf("_id", "ct"),
+                    "mid = ?",
+                    arrayOf(messageId.toString()),
+                    null
+                )
+                ?.use { cursor ->
+                    val idIndex = cursor.getColumnIndex("_id")
+                    val typeIndex = cursor.getColumnIndex("ct")
+
+                    while (cursor.moveToNext()) {
+                        val type =
+                            if (typeIndex >= 0) cursor.getString(typeIndex).orEmpty() else ""
+
+                        if (type.startsWith("image/") && idIndex >= 0) {
+                            found += "content://mms/part/" + cursor.getLong(idIndex)
+                        }
+                    }
+                }
+
+            found.toList()
+        }
+            .getOrDefault(emptyList())
+            .also {
+                if (it.isNotEmpty()) {
+                    mmsImageCache[messageId] = it
+                }
+            }
+
 private fun cachedMmsSender(
     context: Context,
     messageId: Long
@@ -608,7 +655,13 @@ internal fun loadThreadById(
                             sender = sender,
                             text = text,
                             timestamp = cursor.getLong(dateIndex) * 1000L,
-                            fromUser = fromUser
+                            fromUser = fromUser,
+                            imageUris =
+                                if (text.contains("📷")) {
+                                    cachedMmsImages(context, id)
+                                } else {
+                                    emptyList()
+                                }
                         )
                 }
             }

@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.LocalContext
@@ -64,9 +66,22 @@ internal tailrec fun Context.findHostActivity(): Activity? =
     }
 
 /*
- * Wraps the whole app: with the switch off, text fields never ask
- * Android for the keyboard app; with it on, they behave normally.
- * The switch restarts the screen, so reading it once is enough.
+ * The switch as live state, so flipping it in Settings takes effect
+ * without restarting the screen (which used to drop you on home).
+ * Null until first read from the saved setting.
+ */
+internal var KeyboardAppAllowed by
+mutableStateOf<Boolean?>(
+    null
+)
+
+/*
+ * Wraps the whole app. The layout never changes with the switch:
+ * every time a text field asks Android for the keyboard app, this
+ * checks the switch and either lets the request through or quietly
+ * holds it, so the physical keys keep going straight to the field.
+ * A field that already has the keyboard open picks up the change
+ * the next time it's tapped.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -77,20 +92,22 @@ internal fun PromptTextInput(
     val context =
         LocalContext.current
 
-    val useInputMethod =
-        remember {
-            KeyboardPrefs.useInputMethod(context)
-        }
+    InterceptPlatformTextInput(
+        interceptor = { request, nextHandler ->
 
-    if (useInputMethod) {
-        content()
-    } else {
-        InterceptPlatformTextInput(
-            interceptor = { _, _ ->
+            val allowed =
+                KeyboardAppAllowed
+                    ?: KeyboardPrefs.useInputMethod(context).also {
+                        KeyboardAppAllowed = it
+                    }
+
+            if (allowed) {
+                nextHandler.startInputMethod(request)
+            } else {
                 awaitCancellation()
             }
-        ) {
-            content()
         }
+    ) {
+        content()
     }
 }
