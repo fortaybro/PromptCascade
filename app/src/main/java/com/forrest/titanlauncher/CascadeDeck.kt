@@ -1,6 +1,10 @@
 package com.forrest.titanlauncher
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,11 +25,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -36,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.forrest.titanlauncher.mail.MailMessage
 import com.forrest.titanlauncher.usage.HourProductivityStatus
+import kotlinx.coroutines.launch
 
 /*
  * CASCADE HOME DECK
@@ -106,6 +122,51 @@ internal data class CascadeCard(
     val onClick: () -> Unit
 )
 
+/*
+ * KEYBOARD DEALING
+ *
+ * (Swiping on the deck is the main way to deal; see CascadeCardStack.)
+ * With the prompt closed, a keyboard's down and up, where there are
+ * any, also move through the deck: each press deals the next card to the top, open,
+ * and the ones passed go to the bottom of the stack. Enter opens the
+ * top card. Typing anything else still opens the prompt as before.
+ *
+ * The prompt's hidden key field calls cascadeDeckMove and
+ * cascadeDeckOpen (see CommandBar); they do nothing unless the deck
+ * is on screen, so the prompt over other apps is unaffected.
+ */
+internal var CascadeDeckSelection by mutableIntStateOf(0)
+
+private var cascadeDeckShowing = false
+private var cascadeDeckSize = 0
+private var cascadeTopCardAction: (() -> Unit)? = null
+
+internal fun cascadeDeckMove(
+    delta: Int
+): Boolean {
+
+    if (!cascadeDeckShowing || cascadeDeckSize < 2) {
+        return false
+    }
+
+    CascadeDeckSelection =
+        Math.floorMod(CascadeDeckSelection + delta, cascadeDeckSize)
+
+    return true
+}
+
+internal fun cascadeDeckOpen(): Boolean {
+
+    val action =
+        cascadeTopCardAction
+            ?.takeIf { cascadeDeckShowing }
+            ?: return false
+
+    CascadeDeckSelection = 0
+    action()
+    return true
+}
+
 private val CascadeCorner = 20.dp
 private val CascadeOpenHeight = 128.dp
 private val CascadeStripHeight = 66.dp
@@ -132,8 +193,40 @@ internal fun CascadeHomeDeck(
     onFocusClick: (() -> Unit)?,
     cards: List<CascadeCard>,
     shortcuts: List<AppButtonData>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /*
+     * Changes when Home is pressed: the deck goes back to its first
+     * card.
+     */
+    resetKey: Any? = null
 ) {
+
+    LaunchedEffect(resetKey) {
+        CascadeDeckSelection = 0
+    }
+
+    DisposableEffect(Unit) {
+        cascadeDeckShowing = true
+        onDispose {
+            cascadeDeckShowing = false
+            cascadeTopCardAction = null
+        }
+    }
+
+    /*
+     * The deck as dealt: the selected card on top, the cards before
+     * it moved to the bottom.
+     */
+    val selection =
+        if (cards.isEmpty()) 0 else Math.floorMod(CascadeDeckSelection, cards.size)
+
+    val dealt =
+        cards.drop(selection) + cards.take(selection)
+
+    SideEffect {
+        cascadeDeckSize = cards.size
+        cascadeTopCardAction = dealt.firstOrNull()?.onClick
+    }
 
     Column(
         modifier = modifier.fillMaxSize()
@@ -151,7 +244,19 @@ internal fun CascadeHomeDeck(
         Spacer(modifier = Modifier.height(8.dp))
 
         CascadeCardStack(
-            cards = cards,
+            cards = dealt,
+            position = selection + 1,
+            /*
+             * Through the shared helpers, which read the deck's
+             * current state: the swipe handler outlives a single
+             * composition, so it must not hold on to an old selection.
+             */
+            onDealNext = {
+                cascadeDeckMove(1)
+            },
+            onDealPrevious = {
+                cascadeDeckMove(-1)
+            },
             modifier =
                 Modifier
                     .fillMaxWidth()
@@ -295,15 +400,29 @@ private fun CascadeFocusBars(
 
 /*
  * The deck itself. The first card is open; the rest sit below it as
- * strips, each overlapping the one before. Strips that would fall
- * past the bottom are simply cut off by the box, so the deck never
- * pushes anything off screen.
+ * strips, each overlapping the one before.
+ *
+ * Swiping on the deck deals the cards and the cards follow your
+ * finger, like dragging between home and the hub:
+ *   - drag up: the open card lifts away and fades while the next
+ *     card rises into its place;
+ *   - drag down: the open card slides down into the stack while the
+ *     last card comes down from the top.
+ * Let go past a quarter of the way and the deal finishes; otherwise
+ * the cards spring back. Taps still open cards as before.
  */
 @Composable
 private fun CascadeCardStack(
     cards: List<CascadeCard>,
+    position: Int,
+    onDealNext: () -> Unit,
+    onDealPrevious: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+
+    val scope = rememberCoroutineScope()
+    val drag = remember { Animatable(0f) }
+    val density = LocalDensity.current
 
     BoxWithConstraints(
         modifier = modifier.clipToBounds()
@@ -315,6 +434,14 @@ private fun CascadeCardStack(
             } else {
                 CascadeOpenHeight
             }
+
+        /*
+         * How far one deal moves the cards: from the open slot to the
+         * first strip's slot.
+         */
+        val travelPx = with(density) { (openHeight + CascadeGap).toPx() }
+        val stripStepPx = with(density) { CascadeStripStep.toPx() }
+        val canDeal = cards.size > 1
 
         /*
          * How many strips fit with at least their label row showing.
@@ -336,34 +463,129 @@ private fun CascadeCardStack(
         val hiddenCount =
             strips.size - shownStrips.size
 
-        cards.firstOrNull()?.let { card ->
-            CascadeOpenCard(
-                card = card,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(openHeight)
-            )
-        }
+        val offset = drag.value
+        val progress = (kotlin.math.abs(offset) / travelPx).coerceIn(0f, 1f)
 
-        shownStrips.forEachIndexed { index, card ->
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(canDeal, travelPx) {
 
-            val isLastShown =
-                index == shownStrips.lastIndex
+                        if (!canDeal) {
+                            return@pointerInput
+                        }
 
-            CascadeStripCard(
-                card =
-                    if (isLastShown && hiddenCount > 0) {
-                        card.copy(meta = "+$hiddenCount more")
-                    } else {
-                        card
-                    },
-                modifier =
-                    Modifier
-                        .offset(y = openHeight + CascadeGap + CascadeStripStep * index)
-                        .fillMaxWidth()
-                        .height(CascadeStripHeight)
-            )
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { change, amount ->
+                                change.consume()
+                                scope.launch {
+                                    drag.snapTo(
+                                        (drag.value + amount)
+                                            .coerceIn(-travelPx, travelPx)
+                                    )
+                                }
+                            },
+                            onDragEnd = {
+                                scope.launch {
+                                    val value = drag.value
+                                    when {
+                                        value < -travelPx * 0.25f -> {
+                                            drag.animateTo(-travelPx, tween(140))
+                                            onDealNext()
+                                            drag.snapTo(0f)
+                                        }
+
+                                        value > travelPx * 0.25f -> {
+                                            drag.animateTo(travelPx, tween(140))
+                                            onDealPrevious()
+                                            drag.snapTo(0f)
+                                        }
+
+                                        else ->
+                                            drag.animateTo(0f, spring())
+                                    }
+                                }
+                            },
+                            onDragCancel = {
+                                scope.launch {
+                                    drag.animateTo(0f, spring())
+                                }
+                            }
+                        )
+                    }
+        ) {
+
+            /*
+             * Dragging down: the last card comes in from above.
+             */
+            if (offset > 0f && cards.size > 1) {
+                CascadeOpenCard(
+                    card = cards.last(),
+                    position = if (position == 1) cards.size else position - 1,
+                    total = cards.size,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(openHeight)
+                            .graphicsLayer {
+                                translationY = offset - travelPx
+                                alpha = progress
+                            }
+                )
+            }
+
+            cards.firstOrNull()?.let { card ->
+                CascadeOpenCard(
+                    card = card,
+                    position = position,
+                    total = cards.size,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(openHeight)
+                            .graphicsLayer {
+                                translationY = offset
+                                alpha =
+                                    if (offset < 0f) 1f - progress * 0.7f else 1f
+                            }
+                )
+            }
+
+            shownStrips.forEachIndexed { index, card ->
+
+                val isLastShown =
+                    index == shownStrips.lastIndex
+
+                /*
+                 * Up: the first strip follows the finger into the open
+                 * slot and the others each move up one step. Down:
+                 * every strip moves down one step.
+                 */
+                val shift =
+                    when {
+                        offset < 0f && index == 0 -> offset
+                        offset < 0f -> -progress * stripStepPx
+                        else -> progress * stripStepPx
+                    }
+
+                CascadeStripCard(
+                    card =
+                        if (isLastShown && hiddenCount > 0) {
+                            card.copy(meta = "+$hiddenCount more")
+                        } else {
+                            card
+                        },
+                    modifier =
+                        Modifier
+                            .offset(y = openHeight + CascadeGap + CascadeStripStep * index)
+                            .fillMaxWidth()
+                            .height(CascadeStripHeight)
+                            .graphicsLayer {
+                                translationY = shift
+                            }
+                )
+            }
         }
     }
 }
@@ -371,6 +593,8 @@ private fun CascadeCardStack(
 @Composable
 private fun CascadeOpenCard(
     card: CascadeCard,
+    position: Int,
+    total: Int,
     modifier: Modifier = Modifier
 ) {
 
@@ -389,7 +613,15 @@ private fun CascadeOpenCard(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            CascadeKindLabel(card.kind.label, Modifier.weight(1f))
+            CascadeKindLabel(
+                text =
+                    if (total > 1) {
+                        "${card.kind.label} · $position OF $total"
+                    } else {
+                        card.kind.label
+                    },
+                modifier = Modifier.weight(1f)
+            )
             CascadeKindLabel(card.meta.uppercase())
         }
 

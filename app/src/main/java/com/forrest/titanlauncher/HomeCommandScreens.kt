@@ -5995,6 +5995,8 @@ fun TitanHomeScreen(
                                 openCalendar()
                             }
                         ),
+                    resetKey =
+                        homeRequestVersion,
                     shortcuts =
                         listOf(
                             listOf(
@@ -6852,6 +6854,15 @@ fun TitanHomeScreen(
                 onBackspaceWhenEmpty = {
                     lockedTextContact =
                         null
+                },
+                onIdleArrow = {
+                        delta ->
+                    cascadeDeckMove(
+                        delta
+                    )
+                },
+                onIdleEnter = {
+                    cascadeDeckOpen()
                 }
             )
         }
@@ -11734,7 +11745,14 @@ fun CommandBar(
      * The locked contact's name, for the "@ Sarah" pill at the start
      * of the prompt.
      */
-    lockedContactName: String? = null
+    lockedContactName: String? = null,
+    /*
+     * Cascade: down/up and Enter while the prompt is closed deal and
+     * open the home deck's cards. Each returns true when it handled
+     * the key.
+     */
+    onIdleArrow: (Int) -> Boolean = { false },
+    onIdleEnter: () -> Boolean = { false }
 ) {
 
     var commandFieldValue by
@@ -12127,21 +12145,37 @@ fun CommandBar(
                             )
                             .onPreviewKeyEvent {
                                     event ->
-
                                 if (
-                                    event.key ==
-                                    Key.Enter &&
-                                    event.type ==
+                                    event.type !=
                                     KeyEventType.KeyDown
                                 ) {
-
-                                    onSubmit()
-
-                                    true
-
-                                } else {
-
                                     false
+                                } else {
+                                    when (
+                                        event.key
+                                    ) {
+                                        Key.DirectionDown ->
+                                            onIdleArrow(
+                                                1
+                                            )
+
+                                        Key.DirectionUp ->
+                                            onIdleArrow(
+                                                -1
+                                            )
+
+                                        Key.Enter -> {
+                                            if (
+                                                !onIdleEnter()
+                                            ) {
+                                                onSubmit()
+                                            }
+                                            true
+                                        }
+
+                                        else ->
+                                            false
+                                    }
                                 }
                             }
                     }
