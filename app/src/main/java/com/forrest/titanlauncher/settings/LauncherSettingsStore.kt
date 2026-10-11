@@ -147,7 +147,7 @@ class LauncherSettingsStore(
 
         return LauncherSettings(
             themeMode = themeMode,
-            followSystemTheme = preferences.getBoolean("follow_system_theme", true),
+            followSystemTheme = preferences.getBoolean("follow_system_theme", LauncherSettings().followSystemTheme),
             accent = accent,
             textColor = textColor,
             secondaryTextColor = secondaryTextColor,

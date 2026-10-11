@@ -130,12 +130,16 @@ enum class HomeCornerStyle {
 }
 
 data class LauncherSettings(
-    val themeMode: LauncherThemeMode = LauncherThemeMode.LIGHT,
     /*
-     * Daylight "auto": light or dark following the phone's own dark
-     * mode. While on, themeMode is ignored.
+     * Prompt Cascade starts in its dark plum look.
      */
-    val followSystemTheme: Boolean = true,
+    val themeMode: LauncherThemeMode = LauncherThemeMode.DARK,
+    /*
+     * "Auto": light or dark following the phone's own dark mode.
+     * While on, themeMode is ignored. Off by default in Cascade so
+     * the dark deck shows first; Settings can switch it on.
+     */
+    val followSystemTheme: Boolean = false,
     val textColor: LauncherTextColor = LauncherTextColor.DEFAULT,
     val secondaryTextColor: LauncherSecondaryTextColor =
         LauncherSecondaryTextColor.DEFAULT,

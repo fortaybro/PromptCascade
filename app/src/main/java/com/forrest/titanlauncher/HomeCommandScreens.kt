@@ -5871,349 +5871,131 @@ fun TitanHomeScreen(
                 )
 
                 /*
-                 * The ring takes whatever height is left over, so the
-                 * card and tiles always sit at the bottom (the
-                 * mockup's margin-top: auto) and nothing overflows on
-                 * a short screen.
-                 */
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(
-                                1f
-                            )
-                            .blur(
-                                commandFocusBlur
-                            ),
-                    contentAlignment =
-                        Alignment.TopCenter
-                ) {
-
-                    DaylightClockRing(
-                        time =
-                            currentTime,
-                        statuses =
-                            productivityHours,
-                        currentHour =
-                            currentHourOfDay,
-                        showDots =
-                            ShowHomeProductivityDots,
-                        subtitle =
-                            if (
-                                ShowHomeWeather
-                            ) {
-                                weatherSnapshot
-                                    ?.let { snapshot ->
-                                        "${snapshot.temperatureText(WeatherInCelsius)} · ${snapshot.condition.lowercase()}"
-                                    }
-                            } else {
-                                null
-                            },
-                        timeFontSize =
-                            35.sp,
-                        modifier =
-                            Modifier
-                                .size(
-                                    145.dp
-                                )
-                                .then(
-                                    if (
-                                        ShowHomeProductivityDots &&
-                                        !usageAccessGranted
-                                    ) {
-                                        Modifier.clickable {
-
-                                            setStatusText(
-                                                "ALLOW USAGE ACCESS FOR DAYLIGHT"
-                                            )
-
-                                            runCatching {
-                                                context.startActivity(
-                                                    Intent(
-                                                        Settings.ACTION_USAGE_ACCESS_SETTINGS
-                                                    )
-                                                )
-                                            }
-                                                .onFailure {
-                                                    setStatusText(
-                                                        "COULD NOT OPEN SETTINGS"
-                                                    )
-                                                }
-                                        }
-
-                                    } else {
-                                        Modifier
-                                    }
-                                )
-                    )
-                }
-
-                /*
-                 * ONE CARD OF INFO ROWS
+                 * PROMPT CASCADE HOME
                  *
-                 * Texts, mail and the next event as rows of a single
-                 * card: a dot, a bold lead, a muted detail and a small
-                 * meta on the right. Each row keeps what tapping the
-                 * old attention / calendar card did for that item.
+                 * Big time and focus bars, then the deck of cards
+                 * (missed calls, next event, texts, mail, later
+                 * events), then the old tiles as one row of round
+                 * shortcuts. Built in CascadeDeck.kt.
                  */
-                val homeInfoRows =
-                    buildList<DaylightHomeInfoRow> {
-
+                CascadeHomeDeck(
+                    time =
+                        currentTime,
+                    weather =
                         if (
-                            ShowHomeAttentionCard
+                            ShowHomeWeather
                         ) {
-
-                            if (
-                                unreadCount > 0
-                            ) {
-
-                                val newestUnreadEntry =
-                                    quickReplyEntries
-                                        .filter {
-                                            it.isMessage &&
-                                                    it.unread
-                                        }
-                                        .maxByOrNull {
-                                            it.timestamp
-                                        }
-
-                                add(
-                                    DaylightHomeInfoRow(
-                                        lead =
-                                            newestUnreadEntry
-                                                ?.title
-                                                ?.takeIf {
-                                                    it.isNotBlank()
-                                                }
-                                                ?: liveConversationPreview
-                                                    ?.substringBefore(
-                                                        ": "
-                                                    )
-                                                ?: "New messages",
-                                        detail =
-                                            (
-                                                    newestUnreadEntry
-                                                        ?.preview
-                                                        ?.takeIf {
-                                                            it.isNotBlank()
-                                                        }
-                                                        ?: latestUnread
-                                                            ?.body
-                                                        ?: liveConversationPreview
-                                                            ?.substringAfter(
-                                                                ": "
-                                                            )
-                                                        ?: ""
-                                                    )
-                                                .take(
-                                                    60
-                                                ),
-                                        meta =
-                                            if (
-                                                unreadCount == 1
-                                            ) {
-                                                "1 text"
-                                            } else {
-                                                "$unreadCount texts"
-                                            },
-                                        filledDot =
-                                            true,
-                                        onClick = {
-                                            openLatestUnreadMessage()
-                                        },
-                                        /*
-                                         * New texts stand out: the
-                                         * whole row in the accent.
-                                         */
-                                        highlighted =
-                                            true
-                                    )
+                            weatherSnapshot
+                                ?.let { snapshot ->
+                                    "${snapshot.temperatureText(WeatherInCelsius)} · ${snapshot.condition.lowercase()}"
+                                }
+                        } else {
+                            null
+                        },
+                    focusHours =
+                        productivityHours,
+                    currentHour =
+                        currentHourOfDay,
+                    showFocus =
+                        ShowHomeProductivityDots,
+                    onFocusClick =
+                        if (
+                            ShowHomeProductivityDots &&
+                            !usageAccessGranted
+                        ) {
+                            {
+                                setStatusText(
+                                    "ALLOW USAGE ACCESS FOR PROMPT CASCADE"
                                 )
+
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(
+                                            Settings.ACTION_USAGE_ACCESS_SETTINGS
+                                        )
+                                    )
+                                }
                             }
-
-                            if (
-                                homeMailCount > 0
-                            ) {
-
-                                add(
-                                    DaylightHomeInfoRow(
-                                        lead =
-                                            if (
-                                                homeMailCount == 1
-                                            ) {
-                                                "1 $homeMailWord email"
-                                            } else {
-                                                "$homeMailCount $homeMailWord emails"
-                                            },
-                                        detail =
-                                            if (
-                                                importantUnreadMail != null
-                                            ) {
-                                                "${importantUnreadMail.sender}: ${importantUnreadMail.subject}"
-                                                    .take(
-                                                        60
-                                                    )
-                                            } else {
+                        } else {
+                            null
+                        },
+                    cards =
+                        cascadeHomeCards(
+                            now =
+                                currentDateTime.time,
+                            missedCalls =
+                                MissedCallsWaiting,
+                            quickReplyEntries =
+                                quickReplyEntries,
+                            unreadCount =
+                                unreadCount,
+                            latestUnreadBody =
+                                latestUnread?.body,
+                            liveConversationPreview =
+                                liveConversationPreview,
+                            showMessages =
+                                ShowHomeAttentionCard,
+                            homeMailCount =
+                                homeMailCount,
+                            homeMailWord =
+                                homeMailWord,
+                            importantUnreadMail =
+                                importantUnreadMail,
+                            newMailAppNames =
+                                newMailNotifications.map {
+                                    it.appName
+                                },
+                            newMailTimestamp =
+                                newMailNotifications
+                                    .firstOrNull()
+                                    ?.timestamp,
+                            showCalendar =
+                                ShowHomeCalendarCard,
+                            upcomingEvent =
+                                upcomingEvent,
+                            agendaEvents =
+                                calendarAgendaEvents,
+                            onOpenMissedCalls = {
+                                showQuickReply =
+                                    true
+                            },
+                            onOpenLatestText = {
+                                openLatestUnreadMessage()
+                            },
+                            onOpenQuickReply = {
+                                showQuickReply =
+                                    true
+                            },
+                            onOpenMessages = {
+                                if (
+                                    !handOffMessagingIfNotDefault()
+                                ) {
+                                    onOpenMessagesInbox()
+                                }
+                            },
+                            onOpenMail = {
+                                if (
+                                    importantUnreadMail == null &&
+                                    newMailNotifications.isNotEmpty()
+                                ) {
+                                    NotificationCenter
+                                        .openNotification(
+                                            key =
                                                 newMailNotifications
-                                                    .map {
-                                                        it.appName
-                                                    }
-                                                    .filter {
-                                                        it.isNotBlank()
-                                                    }
-                                                    .distinct()
-                                                    .joinToString(
-                                                        ", "
-                                                    )
-                                            },
-                                        meta =
-                                            daylightAgo(
-                                                importantUnreadMail
-                                                    ?.timestamp
-                                                    ?: newMailNotifications
-                                                        .firstOrNull()
-                                                        ?.timestamp
-                                                    ?: 0L,
-                                                currentDateTime.time
-                                            ),
-                                        filledDot =
-                                            true,
-                                        onClick = {
-
-                                            if (
-                                                importantUnreadMail != null
-                                            ) {
-
-                                                onOpenMail()
-
-                                            } else if (
-                                                newMailNotifications.isNotEmpty()
-                                            ) {
-
-                                                /*
-                                                 * Opens that exact email
-                                                 * in its app, like
-                                                 * tapping it in the hub.
-                                                 */
-                                                NotificationCenter
-                                                    .openNotification(
-                                                        key =
-                                                            newMailNotifications
-                                                                .first()
-                                                                .key,
-                                                        context =
-                                                            context
-                                                    )
-
-                                            } else {
-
-                                                onOpenMail()
-                                            }
-                                        }
-                                    )
-                                )
+                                                    .first()
+                                                    .key,
+                                            context =
+                                                context
+                                        )
+                                } else {
+                                    onOpenMail()
+                                }
+                            },
+                            onOpenCalendar = {
+                                openCalendar()
                             }
-
-                            if (
-                                unreadCount == 0 &&
-                                homeMailCount == 0
-                            ) {
-
-                                add(
-                                    DaylightHomeInfoRow(
-                                        lead =
-                                            "Messages",
-                                        detail =
-                                            liveConversationPreview
-                                                ?.take(
-                                                    60
-                                                )
-                                                ?: "all caught up",
-                                        meta =
-                                            "",
-                                        filledDot =
-                                            false,
-                                        onClick = {
-
-                                            if (
-                                                !handOffMessagingIfNotDefault()
-                                            ) {
-                                                onOpenMessagesInbox()
-                                            }
-                                        }
-                                    )
-                                )
-                            }
-                        }
-
-                        if (
-                            ShowHomeCalendarCard
-                        ) {
-
-                            add(
-                                DaylightHomeInfoRow(
-                                    lead =
-                                        upcomingEvent
-                                            ?.title
-                                            ?.takeIf {
-                                                it.isNotBlank()
-                                            }
-                                            ?: "Calendar",
-                                    detail =
-                                        upcomingEvent
-                                            ?.let {
-
-                                                formatCalendarEventTime(
-                                                    it
-                                                )
-                                            }
-                                            ?: "nothing upcoming",
-                                    meta =
-                                        if (
-                                            upcomingEvent != null
-                                        ) {
-                                            "next"
-                                        } else {
-                                            ""
-                                        },
-                                    filledDot =
-                                        false,
-                                    onClick = {
-
-                                        openCalendar()
-                                    }
-                                )
-                            )
-                        }
-                    }
-
-                if (
-                    homeInfoRows.isNotEmpty()
-                ) {
-
-                    DaylightHomeInfoCard(
-                        rows =
-                            homeInfoRows,
-                        modifier =
-                            Modifier.blur(
-                                commandFocusBlur
-                            )
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                6.5.dp
-                            )
-                    )
-                }
-
-                /*
-                 * APP TILES: 2 rows x 4 equal-width tiles.
-                 */
-                DaylightHomeTileGrid(
-                    rows =
+                        ),
+                    shortcuts =
                         listOf(
                             listOf(
                                 AppButtonData(
@@ -6316,11 +6098,17 @@ fun TitanHomeScreen(
                                     onOpenMail()
                                 }
                             )
-                        ),
-                    modifier =
-                        Modifier.blur(
-                            commandFocusBlur
                         )
+                            .flatten(),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(
+                                1f
+                            )
+                            .blur(
+                                commandFocusBlur
+                            )
                 )
 
             }

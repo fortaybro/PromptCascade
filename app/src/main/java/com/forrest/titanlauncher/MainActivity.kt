@@ -545,38 +545,38 @@ internal fun paletteFor(
     ) {
 
         /*
-         * DAYLIGHT
+         * CASCADE
          *
-         * Dark and light are Daylight's own pair: a cool near-black
-         * with dark grey cards, and a cool light grey with white
-         * cards. The other themes are kept as extras.
+         * Dark and light are Prompt Cascade's pair: deep plum with
+         * plum-grey surfaces (the default), and a pale lavender with
+         * white surfaces. The other themes are kept as extras.
          */
         LauncherThemeMode.DARK ->
             LauncherPalette(
                 isDark = true,
-                background = Color(0xFF0F1216),
-                surface = Color(0xFF1B1F26),
-                input = Color(0xFF1B1F26),
-                border = Color(0xFF2A3038),
-                raised = Color(0xFF3D444E),
-                primaryText = Color(0xFFEEF1F4),
-                secondaryText = Color(0xFFA0A8B3),
-                tertiaryText = Color(0xFF7D8691),
-                pendingDot = Color(0xFF3D444E)
+                background = Color(0xFF1E1A2E),
+                surface = Color(0xFF2B2540),
+                input = Color(0xFF2B2540),
+                border = Color(0xFF3A3350),
+                raised = Color(0xFF4A4262),
+                primaryText = Color(0xFFF4F1FA),
+                secondaryText = Color(0xFFB3AACB),
+                tertiaryText = Color(0xFF8A82A3),
+                pendingDot = Color(0xFF4A4262)
             )
 
         LauncherThemeMode.LIGHT ->
             LauncherPalette(
                 isDark = false,
-                background = Color(0xFFEDF0F3),
+                background = Color(0xFFF3F0F8),
                 surface = Color(0xFFFFFFFF),
                 input = Color(0xFFFFFFFF),
-                border = Color(0xFFD5DAE0),
-                raised = Color(0xFFC3CAD3),
-                primaryText = Color(0xFF11141A),
-                secondaryText = Color(0xFF4D5562),
-                tertiaryText = Color(0xFF6B7480),
-                pendingDot = Color(0xFFC3CAD3)
+                border = Color(0xFFDDD6EA),
+                raised = Color(0xFFCFC6E0),
+                primaryText = Color(0xFF1E1A2E),
+                secondaryText = Color(0xFF5E557A),
+                tertiaryText = Color(0xFF7A7194),
+                pendingDot = Color(0xFFCFC6E0)
             )
 
         LauncherThemeMode.NAVY ->
